@@ -143,7 +143,7 @@ class UserSessionSerializer(serializers.ModelSerializer):
 class EconomicYearSerializer(serializers.ModelSerializer):
     class Meta:
         model = EconomicYear
-        fields = ('id', 'name', 'start_date', 'end_date', 'status', 'is_default', 'created_at')
+        fields = ('id', 'name', 'start_date', 'end_date', 'status', 'is_active', 'created_at')
 
     def create(self, validated_data):
         validated_data['user'] = self.context['request'].user

@@ -345,21 +345,38 @@ def economic_years(request):
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
 
-@api_view(['DELETE'])
+@api_view(['PUT', 'DELETE'])
 @permission_classes([IsAuthenticated])
-def delete_economic_year(request, year_id):
+def manage_economic_year(request, year_id):
     try:
         year = EconomicYear.objects.get(id=year_id, user=request.user)
-        if year.is_default:
+        
+        if request.method == 'PUT':
+            serializer = EconomicYearSerializer(year, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response({
+                    'success': True,
+                    'message': 'Economic year updated successfully',
+                    'economic_year': serializer.data
+                })
             return Response({
                 'success': False,
-                'message': 'Cannot delete default economic year'
+                'errors': serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
-        year.delete()
-        return Response({
-            'success': True,
-            'message': 'Economic year deleted successfully'
-        })
+        
+        elif request.method == 'DELETE':
+            if year.is_active:
+                return Response({
+                    'success': False,
+                    'message': 'Cannot delete active economic year'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            year.delete()
+            return Response({
+                'success': True,
+                'message': 'Economic year deleted successfully'
+            })
+            
     except EconomicYear.DoesNotExist:
         return Response({
             'success': False,
@@ -368,23 +385,35 @@ def delete_economic_year(request, year_id):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def set_default_economic_year(request, year_id):
+def toggle_economic_year(request, year_id):
     try:
-        # Remove default from all years
-        EconomicYear.objects.filter(user=request.user).update(is_default=False)
-        # Set new default
         year = EconomicYear.objects.get(id=year_id, user=request.user)
-        year.is_default = True
+        if year.is_active:
+            year.is_active = False
+        else:
+            # Deactivate all other years first
+            EconomicYear.objects.filter(user=request.user).update(is_active=False)
+            year.is_active = True
         year.save()
         return Response({
             'success': True,
-            'message': 'Default economic year updated successfully'
+            'message': 'Economic year status updated successfully'
         })
     except EconomicYear.DoesNotExist:
         return Response({
             'success': False,
             'message': 'Economic year not found'
         }, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def header_economic_years(request):
+    years = EconomicYear.objects.filter(user=request.user).order_by('-created_at')
+    serializer = EconomicYearSerializer(years, many=True)
+    return Response({
+        'success': True,
+        'data': serializer.data
+    })
 
 @api_view(['GET', 'PUT'])
 @permission_classes([IsAuthenticated])
