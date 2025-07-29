@@ -23,3 +23,68 @@ class ShopOwnerFeatures(models.Model):
     expenses = models.BooleanField(default=True)
     reports = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+class UserSession(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sessions')
+    session_key = models.CharField(max_length=40, unique=True)
+    device_info = models.CharField(max_length=200)
+    ip_address = models.GenericIPAddressField()
+    location = models.CharField(max_length=100, blank=True)
+    is_current = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_activity = models.DateTimeField(auto_now=True)
+
+class EconomicYear(models.Model):
+    STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('closed', 'Closed'),
+    ]
+    
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='economic_years')
+    name = models.CharField(max_length=20)
+    start_date = models.DateField()
+    end_date = models.DateField()
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='active')
+    is_default = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ['user', 'name']
+
+class NotificationSettings(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='notification_settings')
+    low_stock_alerts = models.BooleanField(default=True)
+    payment_reminders = models.BooleanField(default=True)
+    daily_reports = models.BooleanField(default=False)
+    system_updates = models.BooleanField(default=True)
+    login_notifications = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+class SecuritySettings(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='security_settings')
+    two_factor_enabled = models.BooleanField(default=False)
+    login_notifications = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+class SecurityActivity(models.Model):
+    ACTIVITY_TYPES = [
+        ('login', 'Login'),
+        ('logout', 'Logout'),
+        ('password_change', 'Password Change'),
+        ('profile_update', 'Profile Update'),
+        ('settings_change', 'Settings Change'),
+        ('session_terminate', 'Session Terminate'),
+        ('failed_login', 'Failed Login'),
+    ]
+    
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='security_activities')
+    activity_type = models.CharField(max_length=20, choices=ACTIVITY_TYPES)
+    description = models.CharField(max_length=200)
+    ip_address = models.GenericIPAddressField()
+    device_info = models.CharField(max_length=200, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['-created_at']

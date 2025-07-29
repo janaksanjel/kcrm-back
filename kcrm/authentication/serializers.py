@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
-from .models import User, ShopOwnerFeatures
+from django.contrib.auth.hashers import check_password
+from .models import User, ShopOwnerFeatures, UserSession, EconomicYear, NotificationSettings, SecuritySettings, SecurityActivity
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, validators=[validate_password])
@@ -15,7 +16,6 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         if attrs['password'] != attrs['password_confirm']:
             raise serializers.ValidationError({"password": "Passwords don't match"})
         
-        # Check if email already exists
         if User.objects.filter(email=attrs['email']).exists():
             raise serializers.ValidationError({"email": "Email already exists"})
         
@@ -29,39 +29,14 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             password=validated_data['password'],
             first_name=validated_data['first_name'],
             last_name=validated_data['last_name'],
-            phone=validated_data['phone'],
+            phone=validated_data.get('phone', ''),
             shop_name=validated_data.get('shop_name', ''),
             role='shop_owner'
         )
         ShopOwnerFeatures.objects.create(user=user)
+        NotificationSettings.objects.create(user=user)
+        SecuritySettings.objects.create(user=user)
         return user
-
-class UserLoginSerializer(serializers.Serializer):
-    email = serializers.CharField()  # Changed to CharField to accept both email and username
-    password = serializers.CharField()
-
-    def validate(self, attrs):
-        email_or_username = attrs.get('email')
-        password = attrs.get('password')
-
-        if email_or_username and password:
-            # Try to authenticate with email first
-            user = authenticate(username=email_or_username, password=password)
-            
-            # If email authentication fails, try to find user by email and authenticate with username
-            if not user and '@' in email_or_username:
-                try:
-                    user_obj = User.objects.get(email=email_or_username)
-                    user = authenticate(username=user_obj.username, password=password)
-                except User.DoesNotExist:
-                    pass
-            
-            if not user:
-                raise serializers.ValidationError({"non_field_errors": "Invalid email/username or password"})
-            if not user.is_active:
-                raise serializers.ValidationError({"non_field_errors": "Account is disabled"})
-            attrs['user'] = user
-        return attrs
 
 class SuperAdminRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, validators=[validate_password])
@@ -72,11 +47,9 @@ class SuperAdminRegistrationSerializer(serializers.ModelSerializer):
         fields = ('username', 'email', 'password')
 
     def validate(self, attrs):
-        # Check if email already exists
         if User.objects.filter(email=attrs['email']).exists():
             raise serializers.ValidationError({"email": "Email already exists"})
         
-        # Check if username already exists
         if User.objects.filter(username=attrs['username']).exists():
             raise serializers.ValidationError({"username": "Username already exists"})
         
@@ -93,7 +66,34 @@ class SuperAdminRegistrationSerializer(serializers.ModelSerializer):
             is_staff=True,
             is_superuser=True
         )
+        NotificationSettings.objects.create(user=user)
+        SecuritySettings.objects.create(user=user)
         return user
+
+class UserLoginSerializer(serializers.Serializer):
+    email = serializers.CharField()
+    password = serializers.CharField()
+
+    def validate(self, attrs):
+        email_or_username = attrs.get('email')
+        password = attrs.get('password')
+
+        if email_or_username and password:
+            user = authenticate(username=email_or_username, password=password)
+            
+            if not user and '@' in email_or_username:
+                try:
+                    user_obj = User.objects.get(email=email_or_username)
+                    user = authenticate(username=user_obj.username, password=password)
+                except User.DoesNotExist:
+                    pass
+            
+            if not user:
+                raise serializers.ValidationError({"non_field_errors": "Invalid email/username or password"})
+            if not user.is_active:
+                raise serializers.ValidationError({"non_field_errors": "Account is disabled"})
+            attrs['user'] = user
+        return attrs
 
 class UserSerializer(serializers.ModelSerializer):
     features = serializers.SerializerMethodField()
@@ -113,3 +113,53 @@ class UserSerializer(serializers.ModelSerializer):
                 'reports': obj.features.reports,
             }
         return None
+
+class ProfileUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ('first_name', 'last_name', 'email', 'phone', 'shop_name')
+
+class PasswordChangeSerializer(serializers.Serializer):
+    current_password = serializers.CharField()
+    new_password = serializers.CharField(validators=[validate_password])
+    confirm_password = serializers.CharField()
+
+    def validate(self, attrs):
+        if attrs['new_password'] != attrs['confirm_password']:
+            raise serializers.ValidationError({"confirm_password": "Passwords don't match"})
+        return attrs
+
+    def validate_current_password(self, value):
+        user = self.context['request'].user
+        if not check_password(value, user.password):
+            raise serializers.ValidationError("Current password is incorrect")
+        return value
+
+class UserSessionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserSession
+        fields = ('id', 'device_info', 'ip_address', 'location', 'is_current', 'created_at', 'last_activity')
+
+class EconomicYearSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EconomicYear
+        fields = ('id', 'name', 'start_date', 'end_date', 'status', 'is_default', 'created_at')
+
+    def create(self, validated_data):
+        validated_data['user'] = self.context['request'].user
+        return super().create(validated_data)
+
+class NotificationSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NotificationSettings
+        fields = ('low_stock_alerts', 'payment_reminders', 'daily_reports', 'system_updates', 'login_notifications')
+
+class SecuritySettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SecuritySettings
+        fields = ('two_factor_enabled', 'login_notifications')
+
+class SecurityActivitySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SecurityActivity
+        fields = ('id', 'activity_type', 'description', 'ip_address', 'device_info', 'created_at')
