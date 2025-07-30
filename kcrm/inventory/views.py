@@ -3,8 +3,8 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from authentication.models import EconomicYear
-from .models import Category, Product
-from .serializers import CategorySerializer, ProductSerializer
+from .models import Category, Supplier, Purchase
+from .serializers import CategorySerializer, SupplierSerializer
 
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
@@ -61,11 +61,6 @@ def manage_category(request, category_id):
             }, status=status.HTTP_400_BAD_REQUEST)
         
         elif request.method == 'DELETE':
-            if category.products.exists():
-                return Response({
-                    'success': False,
-                    'message': 'Cannot delete category with existing products'
-                }, status=status.HTTP_400_BAD_REQUEST)
             category.delete()
             return Response({
                 'success': True,
@@ -80,7 +75,7 @@ def manage_category(request, category_id):
 
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
-def products(request):
+def suppliers(request):
     active_year = EconomicYear.objects.filter(user=request.user, is_active=True).first()
     if not active_year:
         return Response({
@@ -89,25 +84,21 @@ def products(request):
         }, status=status.HTTP_400_BAD_REQUEST)
     
     if request.method == 'GET':
-        products = Product.objects.filter(user=request.user, economic_year=active_year)
-        category_id = request.GET.get('category')
-        if category_id:
-            products = products.filter(category_id=category_id)
-        
-        serializer = ProductSerializer(products, many=True)
+        suppliers = Supplier.objects.filter(user=request.user, economic_year=active_year)
+        serializer = SupplierSerializer(suppliers, many=True)
         return Response({
             'success': True,
-            'products': serializer.data
+            'suppliers': serializer.data
         })
     
     elif request.method == 'POST':
-        serializer = ProductSerializer(data=request.data, context={'request': request})
+        serializer = SupplierSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             serializer.save()
             return Response({
                 'success': True,
-                'message': 'Product created successfully',
-                'product': serializer.data
+                'message': 'Supplier created successfully',
+                'supplier': serializer.data
             }, status=status.HTTP_201_CREATED)
         return Response({
             'success': False,
@@ -116,19 +107,19 @@ def products(request):
 
 @api_view(['PUT', 'DELETE'])
 @permission_classes([IsAuthenticated])
-def manage_product(request, product_id):
+def manage_supplier(request, supplier_id):
     try:
         active_year = EconomicYear.objects.filter(user=request.user, is_active=True).first()
-        product = Product.objects.get(id=product_id, user=request.user, economic_year=active_year)
+        supplier = Supplier.objects.get(id=supplier_id, user=request.user, economic_year=active_year)
         
         if request.method == 'PUT':
-            serializer = ProductSerializer(product, data=request.data, partial=True)
+            serializer = SupplierSerializer(supplier, data=request.data, partial=True)
             if serializer.is_valid():
                 serializer.save()
                 return Response({
                     'success': True,
-                    'message': 'Product updated successfully',
-                    'product': serializer.data
+                    'message': 'Supplier updated successfully',
+                    'supplier': serializer.data
                 })
             return Response({
                 'success': False,
@@ -136,14 +127,83 @@ def manage_product(request, product_id):
             }, status=status.HTTP_400_BAD_REQUEST)
         
         elif request.method == 'DELETE':
-            product.delete()
+            supplier.delete()
             return Response({
                 'success': True,
-                'message': 'Product deleted successfully'
+                'message': 'Supplier deleted successfully'
             })
             
-    except Product.DoesNotExist:
+    except Supplier.DoesNotExist:
         return Response({
             'success': False,
-            'message': 'Product not found'
+            'message': 'Supplier not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def purchases(request):
+    active_year = EconomicYear.objects.filter(user=request.user, is_active=True).first()
+    if not active_year:
+        return Response({
+            'success': False,
+            'message': 'No active economic year found'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    if request.method == 'GET':
+        purchases = Purchase.objects.filter(user=request.user, economic_year=active_year)
+        from .serializers import PurchaseSerializer
+        serializer = PurchaseSerializer(purchases, many=True)
+        return Response({
+            'success': True,
+            'purchases': serializer.data
+        })
+    
+    elif request.method == 'POST':
+        from .serializers import PurchaseSerializer
+        serializer = PurchaseSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                'success': True,
+                'message': 'Purchase created successfully',
+                'purchase': serializer.data
+            }, status=status.HTTP_201_CREATED)
+        return Response({
+            'success': False,
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def manage_purchase(request, purchase_id):
+    try:
+        active_year = EconomicYear.objects.filter(user=request.user, is_active=True).first()
+        purchase = Purchase.objects.get(id=purchase_id, user=request.user, economic_year=active_year)
+        
+        if request.method == 'PUT':
+            from .serializers import PurchaseSerializer
+            serializer = PurchaseSerializer(purchase, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response({
+                    'success': True,
+                    'message': 'Purchase updated successfully',
+                    'purchase': serializer.data
+                })
+            return Response({
+                'success': False,
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        elif request.method == 'DELETE':
+            purchase.delete()
+            return Response({
+                'success': True,
+                'message': 'Purchase deleted successfully'
+            })
+            
+    except Purchase.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'Purchase not found'
         }, status=status.HTTP_404_NOT_FOUND)
