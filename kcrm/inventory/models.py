@@ -39,6 +39,42 @@ class Supplier(models.Model):
     def __str__(self):
         return f"{self.name} - {self.status}"
 
+class Stock(models.Model):
+    STATUS_CHOICES = [
+        ('Good', 'Good'),
+        ('Low', 'Low'),
+        ('Critical', 'Critical'),
+        ('Overstock', 'Overstock')
+    ]
+    
+    product_name = models.CharField(max_length=200)
+    current_stock = models.IntegerField(default=0)
+    min_stock = models.IntegerField(default=0)
+    max_stock = models.IntegerField(default=100)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Good')
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    economic_year = models.ForeignKey(EconomicYear, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ['product_name', 'user', 'economic_year']
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return f"{self.product_name} - {self.current_stock} units"
+    
+    def update_status(self):
+        if self.current_stock <= 0:
+            self.status = 'Critical'
+        elif self.current_stock <= self.min_stock:
+            self.status = 'Low'
+        elif self.current_stock >= self.max_stock:
+            self.status = 'Overstock'
+        else:
+            self.status = 'Good'
+        self.save()
+
 class Purchase(models.Model):
     PAYMENT_STATUS_CHOICES = [
         ('pending', 'Pending'),
@@ -54,6 +90,7 @@ class Purchase(models.Model):
     total_amount = models.DecimalField(max_digits=12, decimal_places=2)
     purchase_date = models.DateField()
     payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, default='pending')
+    auto_add_stock = models.BooleanField(default=False)
     notes = models.TextField(blank=True, null=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     economic_year = models.ForeignKey(EconomicYear, on_delete=models.CASCADE)
@@ -70,6 +107,17 @@ class Purchase(models.Model):
         # Calculate total amount
         self.total_amount = self.quantity * self.unit_price
         super().save(*args, **kwargs)
+        
+        # Auto add to stock if enabled
+        if self.auto_add_stock:
+            stock, created = Stock.objects.get_or_create(
+                product_name=self.product_name,
+                user=self.user,
+                economic_year=self.economic_year,
+                defaults={'current_stock': 0}
+            )
+            stock.current_stock += self.quantity
+            stock.update_status()
         
         # Update supplier total payments if paid
         if self.payment_status == 'paid':
