@@ -49,6 +49,7 @@ class Stock(models.Model):
     
     product_name = models.CharField(max_length=200)
     current_stock = models.IntegerField(default=0)
+    unit = models.CharField(max_length=20, default='kg')
     min_stock = models.IntegerField(default=0)
     max_stock = models.IntegerField(default=100)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Good')
@@ -62,7 +63,7 @@ class Stock(models.Model):
         ordering = ['-updated_at']
 
     def __str__(self):
-        return f"{self.product_name} - {self.current_stock} units"
+        return f"{self.product_name} - {self.current_stock} {self.unit}"
     
     def update_status(self):
         if self.current_stock <= 0:
@@ -86,6 +87,7 @@ class Purchase(models.Model):
     category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='purchases')
     product_name = models.CharField(max_length=200)
     quantity = models.IntegerField(default=1)
+    unit = models.CharField(max_length=20, default='kg')
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     total_amount = models.DecimalField(max_digits=12, decimal_places=2)
     purchase_date = models.DateField()
@@ -114,7 +116,7 @@ class Purchase(models.Model):
                 product_name=self.product_name,
                 user=self.user,
                 economic_year=self.economic_year,
-                defaults={'current_stock': 0}
+                defaults={'current_stock': 0, 'unit': self.unit}
             )
             stock.current_stock += self.quantity
             stock.update_status()

@@ -44,7 +44,7 @@ class SupplierSerializer(serializers.ModelSerializer):
 class StockSerializer(serializers.ModelSerializer):
     class Meta:
         model = Stock
-        fields = ['id', 'product_name', 'current_stock', 'min_stock', 'max_stock', 'status', 'created_at', 'updated_at']
+        fields = ['id', 'product_name', 'current_stock', 'unit', 'min_stock', 'max_stock', 'status', 'created_at', 'updated_at']
         read_only_fields = ['id', 'status', 'created_at', 'updated_at']
     
     def create(self, validated_data):
@@ -67,7 +67,7 @@ class PurchaseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Purchase
         fields = ['id', 'supplier', 'supplier_name', 'category', 'category_name', 'product_name', 
-                 'quantity', 'unit_price', 'total_amount', 'purchase_date', 'payment_status', 
+                 'quantity', 'unit', 'unit_price', 'total_amount', 'purchase_date', 'payment_status', 
                  'auto_add_stock', 'notes', 'created_at', 'updated_at']
         read_only_fields = ['id', 'total_amount', 'created_at', 'updated_at']
     
