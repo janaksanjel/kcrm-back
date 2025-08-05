@@ -89,6 +89,7 @@ class Purchase(models.Model):
     quantity = models.IntegerField(default=1)
     unit = models.CharField(max_length=20, default='kg')
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    selling_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     total_amount = models.DecimalField(max_digits=12, decimal_places=2)
     purchase_date = models.DateField()
     payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, default='pending')
@@ -108,6 +109,18 @@ class Purchase(models.Model):
     def save(self, *args, **kwargs):
         # Calculate total amount
         self.total_amount = self.quantity * self.unit_price
+        
+        # Calculate selling price if not set
+        if not self.selling_price:
+            from decimal import Decimal
+            from billing.models import ProfitPercentage
+            try:
+                profit = ProfitPercentage.objects.first()
+                profit_percentage = Decimal(str(profit.percentage)) if profit else Decimal('20.0')
+                self.selling_price = self.unit_price * (Decimal('1') + profit_percentage / Decimal('100'))
+            except:
+                self.selling_price = self.unit_price * Decimal('1.2')  # Default 20% profit
+        
         super().save(*args, **kwargs)
         
         # Auto add to stock if enabled
