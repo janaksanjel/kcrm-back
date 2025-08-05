@@ -59,11 +59,14 @@ class SaleViewSet(viewsets.ModelViewSet):
             
         date_filter = self.request.query_params.get('date', None)
         payment_method = self.request.query_params.get('payment_method', None)
+        mode_filter = self.request.query_params.get('mode', None)
         
         if date_filter:
             queryset = queryset.filter(created_at__date=date_filter)
         if payment_method:
             queryset = queryset.filter(payment_method=payment_method)
+        if mode_filter:
+            queryset = queryset.filter(mode=mode_filter)
             
         return queryset.order_by('-created_at')
 
@@ -183,6 +186,7 @@ class SaleViewSet(viewsets.ModelViewSet):
                         amount_paid=data['amount_paid'],
                         change_amount=change_amount,
                         points_earned=points_earned,
+                        mode=data.get('mode', 'regular'),
                         cashier=request.user,
                         economic_year=active_eco_year
                     )
@@ -242,6 +246,48 @@ class SaleViewSet(viewsets.ModelViewSet):
             'success': False,
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['get'])
+    def dashboard_stats(self, request):
+        from authentication.models import EconomicYear
+        try:
+            active_eco_year = EconomicYear.objects.get(user=request.user, is_active=True)
+            today = timezone.now().date()
+            
+            # Filter by mode if provided
+            mode_filter = request.query_params.get('mode', None)
+            today_sales = Sale.objects.filter(
+                cashier=request.user, 
+                economic_year=active_eco_year,
+                created_at__date=today
+            )
+            
+            if mode_filter:
+                today_sales = today_sales.filter(mode=mode_filter)
+            
+            today_total = sum(sale.total for sale in today_sales)
+            today_orders = today_sales.count()
+            avg_order = float(today_total / today_orders) if today_orders > 0 else 0
+            
+            return Response({
+                'success': True,
+                'data': {
+                    'todaySales': float(today_total),
+                    'todayOrders': today_orders,
+                    'avgOrderValue': avg_order,
+                    'activeOrders': 0
+                }
+            })
+        except EconomicYear.DoesNotExist:
+            return Response({
+                'success': True,
+                'data': {
+                    'todaySales': 0,
+                    'todayOrders': 0,
+                    'avgOrderValue': 0,
+                    'activeOrders': 0
+                }
+            })
 
     @action(detail=False, methods=['get'])
     def reports(self, request):

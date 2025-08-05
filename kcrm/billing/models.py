@@ -31,6 +31,11 @@ class Sale(models.Model):
         ('upi', 'UPI'),
     ]
     
+    MODE_CHOICES = [
+        ('regular', 'Regular'),
+        ('kirana', 'Kirana'),
+    ]
+    
     sale_number = models.CharField(max_length=50, unique=True)
     customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True)
     customer_name = models.CharField(max_length=100, blank=True)
@@ -43,6 +48,7 @@ class Sale(models.Model):
     amount_paid = models.DecimalField(max_digits=10, decimal_places=2)
     change_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     points_earned = models.IntegerField(default=0)
+    mode = models.CharField(max_length=10, choices=MODE_CHOICES, default='regular')
     cashier = models.ForeignKey(User, on_delete=models.CASCADE)
     economic_year = models.ForeignKey('authentication.EconomicYear', on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)

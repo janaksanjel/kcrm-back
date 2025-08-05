@@ -55,6 +55,7 @@ class POSCreateSerializer(serializers.Serializer):
     amount_paid = serializers.DecimalField(max_digits=10, decimal_places=2)
     total = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
     points_earned = serializers.IntegerField(default=0)
+    mode = serializers.ChoiceField(choices=['regular', 'kirana'], default='regular')
 
 class StockSerializer(serializers.ModelSerializer):
     class Meta:
