@@ -145,28 +145,39 @@ class SaleViewSet(viewsets.ModelViewSet):
                                 'message': f'Insufficient stock for {stock.product_name}'
                             }, status=status.HTTP_400_BAD_REQUEST)
                         
-                        # Get selling price
-                        purchase = Purchase.objects.filter(
-                            product_name=stock.product_name,
-                            user=request.user,
-                            economic_year=active_eco_year
-                        ).order_by('-created_at').first()
-                        
-                        if purchase and purchase.selling_price:
-                            unit_price = Decimal(str(purchase.selling_price))
-                        elif purchase:
-                            unit_price = Decimal(str(purchase.unit_price)) * Decimal('1.2')
+                        # Use price from frontend if available, otherwise calculate
+                        if 'unit_price' in item and item['unit_price']:
+                            unit_price = Decimal(str(item['unit_price']))
                         else:
-                            unit_price = Decimal('50')
+                            # Get selling price from purchase
+                            purchase = Purchase.objects.filter(
+                                product_name=stock.product_name,
+                                user=request.user,
+                                economic_year=active_eco_year
+                            ).order_by('-created_at').first()
+                            
+                            if purchase and purchase.selling_price:
+                                unit_price = Decimal(str(purchase.selling_price))
+                            elif purchase:
+                                unit_price = Decimal(str(purchase.unit_price)) * Decimal('1.2')
+                            else:
+                                unit_price = Decimal('50')
                         
-                        total_price = quantity * unit_price
+                        # Use total from frontend if available, otherwise calculate
+                        if 'total_price' in item and item['total_price']:
+                            total_price = Decimal(str(item['total_price']))
+                        else:
+                            total_price = quantity * unit_price
+                        
+                        # Use product name from frontend if available, otherwise from stock
+                        product_name = item.get('product_name', stock.product_name)
                         
                         items_data.append({
                             'stock': stock,
                             'quantity': quantity,
                             'unit_price': unit_price,
                             'total_price': total_price,
-                            'product_name': stock.product_name,
+                            'product_name': product_name,
                             'unit': stock.unit
                         })
                     

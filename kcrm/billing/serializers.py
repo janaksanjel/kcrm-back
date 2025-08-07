@@ -20,16 +20,26 @@ class CustomerSerializer(serializers.ModelSerializer):
         return data
 
 class SaleItemSerializer(serializers.ModelSerializer):
+    price = serializers.DecimalField(source='unit_price', max_digits=10, decimal_places=2, read_only=True)
+    total = serializers.DecimalField(source='total_price', max_digits=10, decimal_places=2, read_only=True)
+    
     class Meta:
         model = SaleItem
-        fields = '__all__'
+        fields = ['product_name', 'quantity', 'price', 'total', 'unit']
 
 class SaleSerializer(serializers.ModelSerializer):
     items = SaleItemSerializer(many=True, read_only=True)
+    sale_items = SaleItemSerializer(many=True, read_only=True, source='items')
     
     class Meta:
         model = Sale
         fields = '__all__'
+    
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Ensure both items and sale_items are available
+        data['sale_items'] = data['items']
+        return data
 
 class InvoiceItemSerializer(serializers.ModelSerializer):
     class Meta:
