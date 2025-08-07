@@ -241,10 +241,42 @@ def stocks(request):
         except Exception as e:
             # Fallback for existing data without mode
             stocks = Stock.objects.filter(user=request.user, economic_year=active_year)
-        serializer = StockSerializer(stocks, many=True)
+        
+        # Enhance stock data with purchase information
+        enhanced_stocks = []
+        for stock in stocks:
+            stock_data = StockSerializer(stock).data
+            
+            # Get related purchase data for category, supplier, and prices
+            try:
+                latest_purchase = Purchase.objects.filter(
+                    product_name=stock.product_name,
+                    user=request.user,
+                    economic_year=active_year,
+                    mode=mode
+                ).order_by('-created_at').first()
+                
+                if latest_purchase:
+                    stock_data['category_name'] = latest_purchase.category.name if latest_purchase.category else 'General'
+                    stock_data['supplier_name'] = latest_purchase.supplier.name if latest_purchase.supplier else 'Unknown'
+                    stock_data['cost_price'] = float(latest_purchase.unit_price)
+                    stock_data['selling_price'] = float(latest_purchase.selling_price) if latest_purchase.selling_price else float(latest_purchase.unit_price) * 1.2
+                else:
+                    stock_data['category_name'] = 'General'
+                    stock_data['supplier_name'] = 'Unknown'
+                    stock_data['cost_price'] = 0
+                    stock_data['selling_price'] = 0
+            except Exception as e:
+                stock_data['category_name'] = 'General'
+                stock_data['supplier_name'] = 'Unknown'
+                stock_data['cost_price'] = 0
+                stock_data['selling_price'] = 0
+            
+            enhanced_stocks.append(stock_data)
+        
         return Response({
             'success': True,
-            'stocks': serializer.data
+            'stocks': enhanced_stocks
         })
     
     elif request.method == 'POST':

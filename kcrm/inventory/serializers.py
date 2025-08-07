@@ -42,9 +42,14 @@ class SupplierSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
 class StockSerializer(serializers.ModelSerializer):
+    category_name = serializers.CharField(source='category.name', read_only=True)
+    supplier_name = serializers.CharField(source='supplier.name', read_only=True)
+    
     class Meta:
         model = Stock
-        fields = ['id', 'product_name', 'current_stock', 'unit', 'min_stock', 'max_stock', 'status', 'mode', 'created_at', 'updated_at']
+        fields = ['id', 'product_name', 'current_stock', 'unit', 'min_stock', 'max_stock', 
+                 'cost_price', 'selling_price', 'category', 'category_name', 'supplier', 
+                 'supplier_name', 'barcode', 'status', 'mode', 'created_at', 'updated_at']
         read_only_fields = ['id', 'status', 'created_at', 'updated_at']
     
     def create(self, validated_data):
