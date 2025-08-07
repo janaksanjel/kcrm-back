@@ -19,7 +19,12 @@ def categories(request):
         }, status=status.HTTP_400_BAD_REQUEST)
     
     if request.method == 'GET':
-        categories = Category.objects.filter(user=request.user, economic_year=active_year)
+        mode = request.GET.get('mode', 'kirana')
+        try:
+            categories = Category.objects.filter(user=request.user, economic_year=active_year, mode=mode)
+        except Exception as e:
+            # Fallback for existing data without mode
+            categories = Category.objects.filter(user=request.user, economic_year=active_year)
         serializer = CategorySerializer(categories, many=True)
         return Response({
             'success': True,
@@ -85,7 +90,12 @@ def suppliers(request):
         }, status=status.HTTP_400_BAD_REQUEST)
     
     if request.method == 'GET':
-        suppliers = Supplier.objects.filter(user=request.user, economic_year=active_year)
+        mode = request.GET.get('mode', 'kirana')
+        try:
+            suppliers = Supplier.objects.filter(user=request.user, economic_year=active_year, mode=mode)
+        except Exception as e:
+            # Fallback for existing data without mode
+            suppliers = Supplier.objects.filter(user=request.user, economic_year=active_year)
         serializer = SupplierSerializer(suppliers, many=True)
         return Response({
             'success': True,
@@ -151,7 +161,12 @@ def purchases(request):
         }, status=status.HTTP_400_BAD_REQUEST)
     
     if request.method == 'GET':
-        purchases = Purchase.objects.filter(user=request.user, economic_year=active_year)
+        mode = request.GET.get('mode', 'kirana')
+        try:
+            purchases = Purchase.objects.filter(user=request.user, economic_year=active_year, mode=mode)
+        except Exception as e:
+            # Fallback for existing data without mode
+            purchases = Purchase.objects.filter(user=request.user, economic_year=active_year)
         from .serializers import PurchaseSerializer
         serializer = PurchaseSerializer(purchases, many=True)
         return Response({
@@ -220,7 +235,12 @@ def stocks(request):
         }, status=status.HTTP_400_BAD_REQUEST)
     
     if request.method == 'GET':
-        stocks = Stock.objects.filter(user=request.user, economic_year=active_year)
+        mode = request.GET.get('mode', 'kirana')
+        try:
+            stocks = Stock.objects.filter(user=request.user, economic_year=active_year, mode=mode)
+        except Exception as e:
+            # Fallback for existing data without mode
+            stocks = Stock.objects.filter(user=request.user, economic_year=active_year)
         serializer = StockSerializer(stocks, many=True)
         return Response({
             'success': True,
@@ -285,11 +305,14 @@ def reports(request):
             'message': 'No active economic year found'
         }, status=status.HTTP_400_BAD_REQUEST)
     
-    # Get all data
-    stocks = Stock.objects.filter(user=request.user, economic_year=active_year)
-    purchases = Purchase.objects.filter(user=request.user, economic_year=active_year)
-    suppliers = Supplier.objects.filter(user=request.user, economic_year=active_year)
-    categories = Category.objects.filter(user=request.user, economic_year=active_year)
+    # Get mode from query params
+    mode = request.GET.get('mode', 'kirana')
+    
+    # Get all data filtered by mode
+    stocks = Stock.objects.filter(user=request.user, economic_year=active_year, mode=mode)
+    purchases = Purchase.objects.filter(user=request.user, economic_year=active_year, mode=mode)
+    suppliers = Supplier.objects.filter(user=request.user, economic_year=active_year, mode=mode)
+    categories = Category.objects.filter(user=request.user, economic_year=active_year, mode=mode)
     
     # Calculate inventory summary
     total_value = sum(stock.current_stock * 50 for stock in stocks)  # Assuming avg price 50
@@ -347,5 +370,40 @@ def reports(request):
                     'value': float(item['total_value'])
                 } for item in top_products
             ]
+        }
+    })
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def dashboard_stats(request):
+    active_year = EconomicYear.objects.filter(user=request.user, is_active=True).first()
+    if not active_year:
+        return Response({
+            'success': False,
+            'message': 'No active economic year found'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    mode = request.GET.get('mode', 'kirana')
+    
+    # Get counts for dashboard with fallback
+    try:
+        total_categories = Category.objects.filter(user=request.user, economic_year=active_year, mode=mode).count()
+        total_suppliers = Supplier.objects.filter(user=request.user, economic_year=active_year, mode=mode).count()
+        total_purchases = Purchase.objects.filter(user=request.user, economic_year=active_year, mode=mode).count()
+        low_stock_items = Stock.objects.filter(user=request.user, economic_year=active_year, mode=mode, status='Low').count()
+    except Exception as e:
+        # Fallback for existing data without mode
+        total_categories = Category.objects.filter(user=request.user, economic_year=active_year).count()
+        total_suppliers = Supplier.objects.filter(user=request.user, economic_year=active_year).count()
+        total_purchases = Purchase.objects.filter(user=request.user, economic_year=active_year).count()
+        low_stock_items = Stock.objects.filter(user=request.user, economic_year=active_year, status='Low').count()
+    
+    return Response({
+        'success': True,
+        'data': {
+            'totalCategories': total_categories,
+            'totalSuppliers': total_suppliers,
+            'totalPurchases': total_purchases,
+            'lowStockItems': low_stock_items
         }
     })

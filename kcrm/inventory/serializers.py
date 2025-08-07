@@ -6,7 +6,7 @@ class CategorySerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Category
-        fields = ['id', 'name', 'description', 'is_active', 'purchases_count', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'description', 'mode', 'is_active', 'purchases_count', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
     
     def get_purchases_count(self, obj):
@@ -27,7 +27,7 @@ class CategorySerializer(serializers.ModelSerializer):
 class SupplierSerializer(serializers.ModelSerializer):
     class Meta:
         model = Supplier
-        fields = ['id', 'name', 'contact', 'address', 'categories', 'total_payments', 'status', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'contact', 'address', 'categories', 'total_payments', 'status', 'mode', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
     
     def create(self, validated_data):
@@ -44,7 +44,7 @@ class SupplierSerializer(serializers.ModelSerializer):
 class StockSerializer(serializers.ModelSerializer):
     class Meta:
         model = Stock
-        fields = ['id', 'product_name', 'current_stock', 'unit', 'min_stock', 'max_stock', 'status', 'created_at', 'updated_at']
+        fields = ['id', 'product_name', 'current_stock', 'unit', 'min_stock', 'max_stock', 'status', 'mode', 'created_at', 'updated_at']
         read_only_fields = ['id', 'status', 'created_at', 'updated_at']
     
     def create(self, validated_data):
@@ -68,7 +68,7 @@ class PurchaseSerializer(serializers.ModelSerializer):
         model = Purchase
         fields = ['id', 'supplier', 'supplier_name', 'category', 'category_name', 'product_name', 
                  'quantity', 'unit', 'unit_price', 'total_amount', 'purchase_date', 'payment_status', 
-                 'auto_add_stock', 'notes', 'created_at', 'updated_at']
+                 'auto_add_stock', 'notes', 'mode', 'created_at', 'updated_at']
         read_only_fields = ['id', 'total_amount', 'created_at', 'updated_at']
     
     def create(self, validated_data):
