@@ -1,6 +1,5 @@
 from rest_framework import serializers
-from .models import Customer, Sale, SaleItem, Invoice, InvoiceItem
-from inventory.models import Stock
+from .models import Customer, Sale, SaleItem
 
 class CustomerSerializer(serializers.ModelSerializer):
     points = serializers.IntegerField(source='loyalty_points', read_only=True)
@@ -41,21 +40,6 @@ class SaleSerializer(serializers.ModelSerializer):
         data['sale_items'] = data['items']
         return data
 
-class InvoiceItemSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = InvoiceItem
-        fields = '__all__'
-
-class InvoiceSerializer(serializers.ModelSerializer):
-    items = InvoiceItemSerializer(many=True, read_only=True)
-    customer_name = serializers.CharField(source='customer.name', read_only=True)
-    customer_phone = serializers.CharField(source='customer.phone', read_only=True)
-    customer_address = serializers.CharField(source='customer.address', read_only=True)
-    
-    class Meta:
-        model = Invoice
-        fields = '__all__'
-
 class POSCreateSerializer(serializers.Serializer):
     customer_name = serializers.CharField(max_length=100, required=False, allow_blank=True)
     customer_phone = serializers.CharField(max_length=15, required=False, allow_blank=True)
@@ -67,9 +51,5 @@ class POSCreateSerializer(serializers.Serializer):
     points_earned = serializers.IntegerField(default=0)
     mode = serializers.ChoiceField(choices=['regular', 'kirana'], default='regular')
 
-class StockSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Stock
-        fields = ['id', 'product_name', 'current_stock', 'unit', 'min_stock', 
-                 'max_stock', 'status', 'created_at', 'updated_at']
+
 

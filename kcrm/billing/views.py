@@ -8,10 +8,10 @@ from decimal import Decimal
 import uuid
 import json
 
-from .models import Customer, Sale, SaleItem, Invoice, InvoiceItem, ProfitPercentage
+from .models import Customer, Sale, SaleItem, ProfitPercentage
 from .serializers import (
-    CustomerSerializer, SaleSerializer, InvoiceSerializer, 
-    POSCreateSerializer, StockSerializer
+    CustomerSerializer, SaleSerializer, 
+    POSCreateSerializer
 )
 from inventory.models import Stock, Category, Supplier, Purchase
 
@@ -204,10 +204,13 @@ class SaleViewSet(viewsets.ModelViewSet):
                     
                     # Create sale items and update stock
                     for item_data in items_data:
+                        # Remove stock from item_data before creating SaleItem
+                        stock_item = item_data.pop('stock')
                         SaleItem.objects.create(
                             sale=sale,
                             **item_data
                         )
+                        item_data['stock'] = stock_item  # Put it back for stock update
                         
                         # Update stock quantity
                         stock_item = item_data['stock']
@@ -350,41 +353,7 @@ class SaleViewSet(viewsets.ModelViewSet):
             }
         })
 
-class InvoiceViewSet(viewsets.ModelViewSet):
-    queryset = Invoice.objects.all()
-    serializer_class = InvoiceSerializer
-
-    def get_queryset(self):
-        from authentication.models import EconomicYear
-        try:
-            active_eco_year = EconomicYear.objects.get(user=self.request.user, is_active=True)
-            queryset = Invoice.objects.filter(created_by=self.request.user, economic_year=active_eco_year)
-        except EconomicYear.DoesNotExist:
-            queryset = Invoice.objects.none()
-            
-        status_filter = self.request.query_params.get('status', None)
-        search = self.request.query_params.get('search', None)
-        
-        if status_filter:
-            queryset = queryset.filter(status=status_filter)
-        if search:
-            queryset = queryset.filter(
-                models.Q(invoice_number__icontains=search) |
-                models.Q(customer__name__icontains=search)
-            )
-            
-        return queryset.order_by('-created_at')
-    
-    def perform_create(self, serializer):
-        from authentication.models import EconomicYear
-        active_eco_year = EconomicYear.objects.get(user=self.request.user, is_active=True)
-        serializer.save(created_by=self.request.user, economic_year=active_eco_year)
-
-
-
 class StockViewSet(viewsets.ReadOnlyModelViewSet):
-    serializer_class = StockSerializer
-    
     def get_queryset(self):
         return Stock.objects.none()  # Not used since we override list method
 
