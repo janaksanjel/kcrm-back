@@ -552,7 +552,35 @@ class StockViewSet(viewsets.ReadOnlyModelViewSet):
 class ProfitPercentageViewSet(viewsets.ViewSet):
     def list(self, request):
         try:
-            profit = ProfitPercentage.objects.first()
+            from authentication.models import EconomicYear
+            
+            eco_year_id = request.query_params.get('eco_year_id')
+            mode = request.query_params.get('mode', 'kirana')
+            
+            # Get economic year
+            if eco_year_id:
+                try:
+                    economic_year = EconomicYear.objects.get(id=eco_year_id, user=request.user)
+                except EconomicYear.DoesNotExist:
+                    return Response({
+                        'success': False,
+                        'message': 'Economic year not found'
+                    }, status=404)
+            else:
+                try:
+                    economic_year = EconomicYear.objects.get(user=request.user, is_active=True)
+                except EconomicYear.DoesNotExist:
+                    return Response({
+                        'success': False,
+                        'message': 'No active economic year found'
+                    }, status=404)
+            
+            # Get profit percentage for specific eco year and mode
+            profit = ProfitPercentage.objects.filter(
+                economic_year=economic_year,
+                mode=mode
+            ).first()
+            
             if profit:
                 return Response({
                     'success': True,
@@ -561,7 +589,7 @@ class ProfitPercentageViewSet(viewsets.ViewSet):
             else:
                 return Response({
                     'success': False,
-                    'message': 'No profit percentage set'
+                    'message': f'No profit percentage set for {mode} mode in {economic_year.name}'
                 })
         except Exception as e:
             return Response({
@@ -571,18 +599,44 @@ class ProfitPercentageViewSet(viewsets.ViewSet):
     
     def create(self, request):
         try:
+            from authentication.models import EconomicYear
+            
             percentage = request.data.get('percentage')
+            eco_year_id = request.data.get('eco_year_id')
+            mode = request.data.get('mode', 'kirana')
+            
             if percentage is None:
                 return Response({
                     'success': False,
                     'message': 'Percentage is required'
                 }, status=400)
             
-            # Delete all existing records and create new one to ensure single record
-            ProfitPercentage.objects.all().delete()
-            profit = ProfitPercentage.objects.create(
-                percentage=percentage,
-                updated_by=request.user
+            # Get economic year
+            if eco_year_id:
+                try:
+                    economic_year = EconomicYear.objects.get(id=eco_year_id, user=request.user)
+                except EconomicYear.DoesNotExist:
+                    return Response({
+                        'success': False,
+                        'message': 'Economic year not found'
+                    }, status=404)
+            else:
+                try:
+                    economic_year = EconomicYear.objects.get(user=request.user, is_active=True)
+                except EconomicYear.DoesNotExist:
+                    return Response({
+                        'success': False,
+                        'message': 'No active economic year found'
+                    }, status=404)
+            
+            # Update or create profit percentage for specific eco year and mode
+            profit, created = ProfitPercentage.objects.update_or_create(
+                economic_year=economic_year,
+                mode=mode,
+                defaults={
+                    'percentage': percentage,
+                    'updated_by': request.user
+                }
             )
             
             return Response({
@@ -602,14 +656,37 @@ class ProfitPercentageViewSet(viewsets.ViewSet):
             from authentication.models import EconomicYear
             
             profit_percentage = request.data.get('profit_percentage')
+            eco_year_id = request.data.get('eco_year_id')
+            mode = request.data.get('mode', 'kirana')
+            
             if profit_percentage is None:
                 return Response({
                     'success': False,
                     'message': 'Profit percentage is required'
                 }, status=400)
             
-            active_eco_year = EconomicYear.objects.get(user=request.user, is_active=True)
-            purchases = Purchase.objects.filter(user=request.user, economic_year=active_eco_year)
+            # Get economic year
+            if eco_year_id:
+                try:
+                    economic_year = EconomicYear.objects.get(id=eco_year_id, user=request.user)
+                except EconomicYear.DoesNotExist:
+                    return Response({
+                        'success': False,
+                        'message': 'Economic year not found'
+                    }, status=404)
+            else:
+                try:
+                    economic_year = EconomicYear.objects.get(user=request.user, is_active=True)
+                except EconomicYear.DoesNotExist:
+                    return Response({
+                        'success': False,
+                        'message': 'No active economic year found'
+                    }, status=404)
+            
+            # Filter purchases by mode if needed (assuming purchases have mode field)
+            purchases = Purchase.objects.filter(user=request.user, economic_year=economic_year)
+            if hasattr(Purchase, 'mode'):
+                purchases = purchases.filter(mode=mode)
             
             updated_count = 0
             for purchase in purchases:
@@ -620,7 +697,7 @@ class ProfitPercentageViewSet(viewsets.ViewSet):
             
             return Response({
                 'success': True,
-                'message': f'Updated {updated_count} products',
+                'message': f'Updated {updated_count} products for {mode} mode in {economic_year.name}',
                 'updated_count': updated_count
             })
         except Exception as e:

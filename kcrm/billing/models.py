@@ -68,7 +68,15 @@ class SaleItem(models.Model):
         return f"{self.product_name} - {self.quantity} {self.unit}"
 
 class ProfitPercentage(models.Model):
+    MODE_CHOICES = [
+        ('kirana', 'Kirana'),
+        ('restaurant', 'Restaurant'),
+        ('dealership', 'Dealership'),
+    ]
+    
     percentage = models.DecimalField(max_digits=5, decimal_places=2, default=20.00)
+    economic_year = models.ForeignKey('authentication.EconomicYear', on_delete=models.CASCADE, null=True, blank=True)
+    mode = models.CharField(max_length=20, choices=MODE_CHOICES, null=True, blank=True)
     updated_by = models.ForeignKey(User, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -77,5 +85,7 @@ class ProfitPercentage(models.Model):
         ordering = ['-updated_at']
 
     def __str__(self):
-        return f"Profit: {self.percentage}%"
+        eco_year_name = self.economic_year.name if self.economic_year else 'No Year'
+        mode_name = self.mode or 'No Mode'
+        return f"Profit: {self.percentage}% ({mode_name} - {eco_year_name})"
 

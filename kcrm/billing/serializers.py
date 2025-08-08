@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Customer, Sale, SaleItem
+from .models import Customer, Sale, SaleItem, ProfitPercentage
 
 class CustomerSerializer(serializers.ModelSerializer):
     points = serializers.IntegerField(source='loyalty_points', read_only=True)
@@ -50,6 +50,12 @@ class POSCreateSerializer(serializers.Serializer):
     total = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
     points_earned = serializers.IntegerField(default=0)
     mode = serializers.ChoiceField(choices=['regular', 'kirana'], default='regular')
+
+class ProfitPercentageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProfitPercentage
+        fields = ['id', 'percentage', 'economic_year', 'mode', 'updated_by', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'updated_by', 'created_at', 'updated_at']
 
 
 
