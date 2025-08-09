@@ -10,6 +10,8 @@ urlpatterns = [
     
     path('purchases/', views.purchases, name='purchases'),
     path('purchases/<int:purchase_id>/', views.manage_purchase, name='manage_purchase'),
+    path('purchases/<int:purchase_id>/transfer/', views.transfer_to_stock, name='transfer_to_stock'),
+    path('purchases/<int:purchase_id>/untransfer/', views.untransfer_from_stock, name='untransfer_from_stock'),
     
     path('stocks/', views.stocks, name='stocks'),
     path('stocks/<int:stock_id>/', views.manage_stock, name='manage_stock'),

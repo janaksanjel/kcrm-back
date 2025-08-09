@@ -126,6 +126,7 @@ class Purchase(models.Model):
     purchase_date = models.DateField()
     payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, default='pending')
     auto_add_stock = models.BooleanField(default=False)
+    isTransferredStock = models.BooleanField(default=False)
     notes = models.TextField(blank=True, null=True)
     mode = models.CharField(max_length=20, choices=MODE_CHOICES, default='kirana')
     user = models.ForeignKey(User, on_delete=models.CASCADE)

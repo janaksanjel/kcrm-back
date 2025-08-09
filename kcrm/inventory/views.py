@@ -405,6 +405,140 @@ def reports(request):
         }
     })
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def untransfer_from_stock(request, purchase_id):
+    try:
+        active_year = EconomicYear.objects.filter(user=request.user, is_active=True).first()
+        if not active_year:
+            return Response({
+                'success': False,
+                'message': 'No active economic year found'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        purchase = Purchase.objects.get(id=purchase_id, user=request.user, economic_year=active_year)
+        
+        # Check if not transferred
+        if not purchase.isTransferredStock:
+            return Response({
+                'success': False,
+                'message': 'Purchase is not transferred to stock'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Find and update stock
+        try:
+            stock = Stock.objects.get(
+                product_name=purchase.product_name,
+                user=request.user,
+                economic_year=active_year,
+                mode=purchase.mode
+            )
+            
+            # Reduce stock quantity
+            if stock.current_stock >= purchase.quantity:
+                stock.current_stock -= purchase.quantity
+                if stock.current_stock == 0:
+                    stock.delete()
+                else:
+                    stock.save()
+            else:
+                return Response({
+                    'success': False,
+                    'message': 'Insufficient stock to untransfer'
+                }, status=status.HTTP_400_BAD_REQUEST)
+                
+        except Stock.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'Stock not found for this product'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Mark purchase as not transferred
+        purchase.isTransferredStock = False
+        purchase.save()
+        
+        return Response({
+            'success': True,
+            'message': 'Purchase untransferred from stock successfully'
+        })
+        
+    except Purchase.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'Purchase not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({
+            'success': False,
+            'message': f'Error untransferring from stock: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def transfer_to_stock(request, purchase_id):
+    try:
+        active_year = EconomicYear.objects.filter(user=request.user, is_active=True).first()
+        if not active_year:
+            return Response({
+                'success': False,
+                'message': 'No active economic year found'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        purchase = Purchase.objects.get(id=purchase_id, user=request.user, economic_year=active_year)
+        
+        # Check if already transferred
+        if purchase.isTransferredStock:
+            return Response({
+                'success': False,
+                'message': 'Purchase already transferred to stock'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Create or update stock
+        stock, created = Stock.objects.get_or_create(
+            product_name=purchase.product_name,
+            user=request.user,
+            economic_year=active_year,
+            mode=purchase.mode,
+            defaults={
+                'current_stock': purchase.quantity,
+                'unit': purchase.unit,
+                'min_stock': 10,
+                'max_stock': 100,
+                'cost_price': purchase.unit_price,
+                'selling_price': purchase.selling_price or purchase.unit_price * 1.2,
+                'category': purchase.category,
+                'supplier': purchase.supplier
+            }
+        )
+        
+        if not created:
+            # Update existing stock
+            stock.current_stock += purchase.quantity
+            stock.cost_price = purchase.unit_price
+            stock.selling_price = purchase.selling_price or purchase.unit_price * 1.2
+            stock.save()
+        
+        # Mark purchase as transferred
+        purchase.isTransferredStock = True
+        purchase.save()
+        
+        return Response({
+            'success': True,
+            'message': 'Purchase transferred to stock successfully',
+            'stock_id': stock.id
+        })
+        
+    except Purchase.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'Purchase not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({
+            'success': False,
+            'message': f'Error transferring to stock: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def dashboard_stats(request):

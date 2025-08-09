@@ -73,7 +73,7 @@ class PurchaseSerializer(serializers.ModelSerializer):
         model = Purchase
         fields = ['id', 'supplier', 'supplier_name', 'category', 'category_name', 'product_name', 
                  'quantity', 'unit', 'unit_price', 'total_amount', 'purchase_date', 'payment_status', 
-                 'auto_add_stock', 'notes', 'mode', 'created_at', 'updated_at']
+                 'auto_add_stock', 'isTransferredStock', 'notes', 'mode', 'created_at', 'updated_at']
         read_only_fields = ['id', 'total_amount', 'created_at', 'updated_at']
     
     def create(self, validated_data):
