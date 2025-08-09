@@ -67,6 +67,68 @@ class SaleItem(models.Model):
     def __str__(self):
         return f"{self.product_name} - {self.quantity} {self.unit}"
 
+class MenuCategory(models.Model):
+    MODE_CHOICES = [
+        ('kirana', 'Kirana'),
+        ('restaurant', 'Restaurant'),
+        ('dealership', 'Dealership'),
+    ]
+    
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    mode = models.CharField(max_length=20, choices=MODE_CHOICES)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    economic_year = models.ForeignKey('authentication.EconomicYear', on_delete=models.CASCADE)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ['name', 'mode', 'user', 'economic_year']
+        ordering = ['name']
+    
+    def __str__(self):
+        return f"{self.name} ({self.mode})"
+
+class MenuItem(models.Model):
+    MODE_CHOICES = [
+        ('kirana', 'Kirana'),
+        ('restaurant', 'Restaurant'),
+        ('dealership', 'Dealership'),
+    ]
+    
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+    category = models.ForeignKey(MenuCategory, on_delete=models.CASCADE, related_name='menu_items')
+    image = models.ImageField(upload_to='menu_items/', blank=True, null=True)
+    available = models.BooleanField(default=True)
+    stock = models.IntegerField(default=0)
+    mode = models.CharField(max_length=20, choices=MODE_CHOICES)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    economic_year = models.ForeignKey('authentication.EconomicYear', on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['name']
+    
+    def __str__(self):
+        return f"{self.name} - {self.category.name}"
+
+class MenuIngredient(models.Model):
+    menu_item = models.ForeignKey(MenuItem, on_delete=models.CASCADE, related_name='ingredients')
+    ingredient = models.ForeignKey('inventory.Stock', on_delete=models.CASCADE)
+    quantity = models.DecimalField(max_digits=10, decimal_places=2, default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ['menu_item', 'ingredient']
+    
+    def __str__(self):
+        return f"{self.menu_item.name} - {self.ingredient.product_name} ({self.quantity})"
+
 class ProfitPercentage(models.Model):
     MODE_CHOICES = [
         ('kirana', 'Kirana'),

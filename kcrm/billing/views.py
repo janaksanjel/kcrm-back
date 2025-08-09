@@ -8,10 +8,10 @@ from decimal import Decimal
 import uuid
 import json
 
-from .models import Customer, Sale, SaleItem, ProfitPercentage
+from .models import Customer, Sale, SaleItem, ProfitPercentage, MenuCategory, MenuItem, MenuIngredient
 from .serializers import (
     CustomerSerializer, SaleSerializer, 
-    POSCreateSerializer
+    POSCreateSerializer, MenuCategorySerializer, MenuItemSerializer, MenuIngredientSerializer
 )
 from inventory.models import Stock, Category, Supplier, Purchase
 
@@ -548,6 +548,150 @@ class StockViewSet(viewsets.ReadOnlyModelViewSet):
                 'error': str(e),
                 'message': 'Failed to fetch inventory status'
             }, status=500)
+
+class MenuCategoryViewSet(viewsets.ModelViewSet):
+    queryset = MenuCategory.objects.all()
+    serializer_class = MenuCategorySerializer
+    
+    def get_queryset(self):
+        from authentication.models import EconomicYear
+        try:
+            active_eco_year = EconomicYear.objects.get(user=self.request.user, is_active=True)
+            queryset = MenuCategory.objects.filter(user=self.request.user, economic_year=active_eco_year)
+        except EconomicYear.DoesNotExist:
+            queryset = MenuCategory.objects.none()
+        
+        mode = self.request.query_params.get('mode')
+        if mode:
+            queryset = queryset.filter(mode=mode)
+        
+        return queryset.order_by('name')
+    
+    def perform_create(self, serializer):
+        from authentication.models import EconomicYear
+        active_eco_year = EconomicYear.objects.get(user=self.request.user, is_active=True)
+        serializer.save(user=self.request.user, economic_year=active_eco_year)
+
+class MenuItemViewSet(viewsets.ModelViewSet):
+    queryset = MenuItem.objects.all()
+    serializer_class = MenuItemSerializer
+    
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+    
+    def get_queryset(self):
+        from authentication.models import EconomicYear
+        try:
+            active_eco_year = EconomicYear.objects.get(user=self.request.user, is_active=True)
+            queryset = MenuItem.objects.filter(user=self.request.user, economic_year=active_eco_year)
+        except EconomicYear.DoesNotExist:
+            queryset = MenuItem.objects.none()
+        
+        mode = self.request.query_params.get('mode')
+        category = self.request.query_params.get('category')
+        search = self.request.query_params.get('search')
+        
+        if mode:
+            queryset = queryset.filter(mode=mode)
+        if category:
+            queryset = queryset.filter(category_id=category)
+        if search:
+            queryset = queryset.filter(
+                models.Q(name__icontains=search) |
+                models.Q(description__icontains=search)
+            )
+        
+        return queryset.order_by('name')
+    
+    def perform_create(self, serializer):
+        from authentication.models import EconomicYear
+        active_eco_year = EconomicYear.objects.get(user=self.request.user, is_active=True)
+        serializer.save(user=self.request.user, economic_year=active_eco_year)
+    
+    @action(detail=True, methods=['get', 'post'])
+    def ingredients(self, request, pk=None):
+        menu_item = self.get_object()
+        
+        if request.method == 'GET':
+            ingredients = MenuIngredient.objects.filter(menu_item=menu_item)
+            serializer = MenuIngredientSerializer(ingredients, many=True)
+            return Response(serializer.data)
+        
+        elif request.method == 'POST':
+            from inventory.models import Stock
+            try:
+                ingredient_id = request.data.get('ingredient_id')
+                quantity = request.data.get('quantity', 1)
+                
+                ingredient = Stock.objects.get(id=ingredient_id, user=request.user)
+                menu_ingredient, created = MenuIngredient.objects.get_or_create(
+                    menu_item=menu_item,
+                    ingredient=ingredient,
+                    defaults={'quantity': quantity}
+                )
+                
+                if not created:
+                    menu_ingredient.quantity = quantity
+                    menu_ingredient.save()
+                
+                serializer = MenuIngredientSerializer(menu_ingredient)
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            except Stock.DoesNotExist:
+                return Response({'error': 'Ingredient not found'}, status=status.HTTP_404_NOT_FOUND)
+            except Exception as e:
+                return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['patch', 'delete'], url_path='ingredients/(?P<ingredient_id>[^/.]+)')
+    def ingredient_detail(self, request, pk=None, ingredient_id=None):
+        menu_item = self.get_object()
+        
+        try:
+            menu_ingredient = MenuIngredient.objects.get(
+                menu_item=menu_item,
+                ingredient_id=ingredient_id
+            )
+        except MenuIngredient.DoesNotExist:
+            return Response({'error': 'Ingredient not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        if request.method == 'PATCH':
+            quantity = request.data.get('quantity')
+            if quantity is not None:
+                menu_ingredient.quantity = quantity
+                menu_ingredient.save()
+            serializer = MenuIngredientSerializer(menu_ingredient)
+            return Response(serializer.data)
+        
+        elif request.method == 'DELETE':
+            menu_ingredient.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+    
+    @action(detail=True, methods=['patch'], url_path='update-stock')
+    def update_stock(self, request, pk=None):
+        menu_item = self.get_object()
+        stock = request.data.get('stock')
+        
+        if stock is not None and stock >= 0:
+            menu_item.stock = stock
+            menu_item.save()
+            serializer = self.get_serializer(menu_item)
+            return Response(serializer.data)
+        
+        return Response({'error': 'Invalid stock value'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['patch'], url_path='toggle-availability')
+    def toggle_availability(self, request, pk=None):
+        menu_item = self.get_object()
+        available = request.data.get('available')
+        
+        if available is not None:
+            menu_item.available = available
+            menu_item.save()
+            serializer = self.get_serializer(menu_item)
+            return Response(serializer.data)
+        
+        return Response({'error': 'Invalid availability value'}, status=status.HTTP_400_BAD_REQUEST)
 
 class ProfitPercentageViewSet(viewsets.ViewSet):
     def list(self, request):

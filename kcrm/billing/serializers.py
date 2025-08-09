@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Customer, Sale, SaleItem, ProfitPercentage
+from .models import Customer, Sale, SaleItem, ProfitPercentage, MenuCategory, MenuItem, MenuIngredient
 
 class CustomerSerializer(serializers.ModelSerializer):
     points = serializers.IntegerField(source='loyalty_points', read_only=True)
@@ -50,6 +50,44 @@ class POSCreateSerializer(serializers.Serializer):
     total = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
     points_earned = serializers.IntegerField(default=0)
     mode = serializers.ChoiceField(choices=['regular', 'kirana'], default='regular')
+
+class MenuCategorySerializer(serializers.ModelSerializer):
+    menu_items_count = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = MenuCategory
+        fields = ['id', 'name', 'description', 'mode', 'is_active', 'menu_items_count', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
+    
+    def get_menu_items_count(self, obj):
+        return obj.menu_items.count()
+
+class MenuIngredientSerializer(serializers.ModelSerializer):
+    ingredient_name = serializers.CharField(source='ingredient.product_name', read_only=True)
+    ingredient_id = serializers.IntegerField(source='ingredient.id', read_only=True)
+    ingredient_unit = serializers.CharField(source='ingredient.unit', read_only=True)
+    
+    class Meta:
+        model = MenuIngredient
+        fields = ['id', 'ingredient_id', 'ingredient_name', 'ingredient_unit', 'quantity', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+class MenuItemSerializer(serializers.ModelSerializer):
+    category_name = serializers.CharField(source='category.name', read_only=True)
+    image_url = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = MenuItem
+        fields = ['id', 'name', 'description', 'price', 'category', 'category_name', 'image', 'image_url', 'available', 'stock', 'mode', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
+    
+    def get_image_url(self, obj):
+        if obj.image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+        return None
 
 class ProfitPercentageSerializer(serializers.ModelSerializer):
     class Meta:
