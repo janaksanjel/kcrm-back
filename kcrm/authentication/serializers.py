@@ -70,6 +70,33 @@ class SuperAdminRegistrationSerializer(serializers.ModelSerializer):
         SecuritySettings.objects.create(user=user)
         return user
 
+class KitchenUserRegistrationSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True)
+    username = serializers.CharField()
+
+    class Meta:
+        model = User
+        fields = ('username', 'password')
+
+    def validate(self, attrs):
+        if User.objects.filter(username=attrs['username']).exists():
+            raise serializers.ValidationError({"username": "Username already exists"})
+        return attrs
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        restaurant_id = request.user.id if request.user.role == 'shop_owner' else None
+        
+        user = User.objects.create_user(
+            username=validated_data['username'],
+            password=validated_data['password'],
+            first_name=validated_data['username'],
+            last_name='Kitchen',
+            role='kitchen_user',
+            restaurant_id=restaurant_id
+        )
+        return user
+
 class UserLoginSerializer(serializers.Serializer):
     email = serializers.CharField()
     password = serializers.CharField()
@@ -97,10 +124,11 @@ class UserLoginSerializer(serializers.Serializer):
 
 class UserSerializer(serializers.ModelSerializer):
     features = serializers.SerializerMethodField()
+    restaurant_name = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ('id', 'email', 'first_name', 'last_name', 'phone', 'role', 'shop_name', 'features')
+        fields = ('id', 'email', 'first_name', 'last_name', 'phone', 'role', 'shop_name', 'restaurant_name', 'features')
 
     def get_features(self, obj):
         if hasattr(obj, 'features'):
@@ -113,6 +141,15 @@ class UserSerializer(serializers.ModelSerializer):
                 'reports': obj.features.reports,
             }
         return None
+    
+    def get_restaurant_name(self, obj):
+        if obj.role == 'kitchen_user' and obj.restaurant_id:
+            try:
+                restaurant_owner = User.objects.get(id=obj.restaurant_id)
+                return restaurant_owner.shop_name
+            except User.DoesNotExist:
+                return None
+        return obj.shop_name
 
 class ProfileUpdateSerializer(serializers.ModelSerializer):
     class Meta:

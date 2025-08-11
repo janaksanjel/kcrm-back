@@ -22,4 +22,9 @@ urlpatterns = [
     path('settings/notifications/', views.notification_settings, name='notification_settings'),
     path('settings/security/', views.security_settings, name='security_settings'),
     path('settings/security/activity/', views.get_security_activity, name='get_security_activity'),
+    
+    # Kitchen user management
+    path('kitchen-users/create/', views.create_kitchen_user, name='create_kitchen_user'),
+    path('kitchen-users/', views.get_kitchen_users, name='get_kitchen_users'),
+    path('kitchen-users/<int:user_id>/delete/', views.delete_kitchen_user, name='delete_kitchen_user'),
 ]

@@ -10,7 +10,7 @@ import uuid
 import hashlib
 from .serializers import (
     UserRegistrationSerializer, UserLoginSerializer, UserSerializer, SuperAdminRegistrationSerializer,
-    ProfileUpdateSerializer, PasswordChangeSerializer, UserSessionSerializer, EconomicYearSerializer,
+    KitchenUserRegistrationSerializer, ProfileUpdateSerializer, PasswordChangeSerializer, UserSessionSerializer, EconomicYearSerializer,
     NotificationSettingsSerializer, SecuritySettingsSerializer, SecurityActivitySerializer
 )
 from .models import UserSession, EconomicYear, NotificationSettings, SecuritySettings, SecurityActivity
@@ -408,7 +408,10 @@ def toggle_economic_year(request, year_id):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def header_economic_years(request):
-    years = EconomicYear.objects.filter(user=request.user).order_by('-created_at')
+    if request.user.role == 'kitchen_user' and request.user.restaurant_id:
+        years = EconomicYear.objects.filter(user_id=request.user.restaurant_id).order_by('-created_at')
+    else:
+        years = EconomicYear.objects.filter(user=request.user).order_by('-created_at')
     serializer = EconomicYearSerializer(years, many=True)
     return Response({
         'success': True,
@@ -476,3 +479,71 @@ def get_security_activity(request):
         'success': True,
         'activities': serializer.data
     })
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_kitchen_user(request):
+    # Only shop owners can create kitchen users
+    if request.user.role != 'shop_owner':
+        return Response({
+            'success': False,
+            'message': 'Only shop owners can create kitchen users'
+        }, status=status.HTTP_403_FORBIDDEN)
+    
+    serializer = KitchenUserRegistrationSerializer(data=request.data, context={'request': request})
+    if serializer.is_valid():
+        user = serializer.save()
+        user_data = UserSerializer(user).data
+        
+        return Response({
+            'success': True,
+            'message': 'Kitchen user created successfully',
+            'user': user_data
+        }, status=status.HTTP_201_CREATED)
+    
+    return Response({
+        'success': False,
+        'message': 'Kitchen user creation failed',
+        'errors': serializer.errors
+    }, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_kitchen_users(request):
+    # Only shop owners can view kitchen users
+    if request.user.role != 'shop_owner':
+        return Response({
+            'success': False,
+            'message': 'Only shop owners can view kitchen users'
+        }, status=status.HTTP_403_FORBIDDEN)
+    
+    kitchen_users = User.objects.filter(role='kitchen_user', restaurant_id=request.user.id)
+    serializer = UserSerializer(kitchen_users, many=True)
+    
+    return Response({
+        'success': True,
+        'kitchen_users': serializer.data
+    })
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_kitchen_user(request, user_id):
+    # Only shop owners can delete kitchen users
+    if request.user.role != 'shop_owner':
+        return Response({
+            'success': False,
+            'message': 'Only shop owners can delete kitchen users'
+        }, status=status.HTTP_403_FORBIDDEN)
+    
+    try:
+        user = User.objects.get(id=user_id, role='kitchen_user', restaurant_id=request.user.id)
+        user.delete()
+        return Response({
+            'success': True,
+            'message': 'Kitchen user deleted successfully'
+        })
+    except User.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'Kitchen user not found'
+        }, status=status.HTTP_404_NOT_FOUND)

@@ -5,11 +5,13 @@ class User(AbstractUser):
     ROLE_CHOICES = [
         ('shop_owner', 'Shop Owner'),
         ('super_admin', 'Super Admin'),
+        ('kitchen_user', 'Kitchen User'),
     ]
     
     phone = models.CharField(max_length=15, blank=True, null=True)
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='shop_owner')
     shop_name = models.CharField(max_length=100, blank=True, null=True)
+    restaurant_id = models.IntegerField(blank=True, null=True)
     is_verified = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
