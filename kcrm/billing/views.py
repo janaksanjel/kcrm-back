@@ -625,6 +625,15 @@ class MenuItemViewSet(viewsets.ModelViewSet):
                 ingredient_id = request.data.get('ingredient_id')
                 quantity = request.data.get('quantity', 1)
                 
+                # Validate ingredient_id
+                if not ingredient_id or ingredient_id == 'undefined' or ingredient_id == 'null':
+                    return Response({'error': 'Invalid ingredient ID'}, status=status.HTTP_400_BAD_REQUEST)
+                
+                try:
+                    int(ingredient_id)
+                except (ValueError, TypeError):
+                    return Response({'error': 'Invalid ingredient ID format'}, status=status.HTTP_400_BAD_REQUEST)
+                
                 ingredient = Stock.objects.get(id=ingredient_id, user=request.user)
                 menu_ingredient, created = MenuIngredient.objects.get_or_create(
                     menu_item=menu_item,
@@ -646,6 +655,16 @@ class MenuItemViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['patch', 'delete'], url_path='ingredients/(?P<ingredient_id>[^/.]+)')
     def ingredient_detail(self, request, pk=None, ingredient_id=None):
         menu_item = self.get_object()
+        
+        # Validate ingredient_id
+        if not ingredient_id or ingredient_id == 'undefined' or ingredient_id == 'null':
+            return Response({'error': 'Invalid ingredient ID'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Convert to int to ensure it's a valid ID
+            int(ingredient_id)
+        except (ValueError, TypeError):
+            return Response({'error': 'Invalid ingredient ID format'}, status=status.HTTP_400_BAD_REQUEST)
         
         try:
             menu_ingredient = MenuIngredient.objects.get(

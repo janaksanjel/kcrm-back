@@ -151,3 +151,72 @@ class ProfitPercentage(models.Model):
         mode_name = self.mode or 'No Mode'
         return f"Profit: {self.percentage}% ({mode_name} - {eco_year_name})"
 
+class Floor(models.Model):
+    name = models.CharField(max_length=100)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    economic_year = models.ForeignKey('authentication.EconomicYear', on_delete=models.CASCADE)
+    expanded = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ['name', 'user', 'economic_year']
+        ordering = ['name']
+    
+    def __str__(self):
+        return self.name
+
+class Room(models.Model):
+    name = models.CharField(max_length=100)
+    floor = models.ForeignKey(Floor, on_delete=models.CASCADE, related_name='rooms')
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    economic_year = models.ForeignKey('authentication.EconomicYear', on_delete=models.CASCADE)
+    expanded = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ['name', 'floor', 'user', 'economic_year']
+        ordering = ['name']
+    
+    def __str__(self):
+        return f"{self.floor.name} - {self.name}"
+
+class Table(models.Model):
+    STATUS_CHOICES = [
+        ('available', 'Available'),
+        ('occupied', 'Occupied'),
+        ('reserved', 'Reserved'),
+    ]
+    
+    name = models.CharField(max_length=100)
+    room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='tables')
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    economic_year = models.ForeignKey('authentication.EconomicYear', on_delete=models.CASCADE)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='available')
+    position_x = models.FloatField(default=100)
+    position_y = models.FloatField(default=100)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ['name', 'room', 'user', 'economic_year']
+        ordering = ['name']
+    
+    def __str__(self):
+        return f"{self.room.floor.name} - {self.room.name} - {self.name}"
+
+class Chair(models.Model):
+    table = models.ForeignKey(Table, on_delete=models.CASCADE, related_name='chairs')
+    position = models.IntegerField()
+    occupied = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ['table', 'position']
+        ordering = ['position']
+    
+    def __str__(self):
+        return f"{self.table.name} - Chair {self.position}"
+
