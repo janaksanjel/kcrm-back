@@ -167,6 +167,7 @@ class TableSystemViewSet(viewsets.ViewSet):
             name = request.data.get('name')
             position_x = request.data.get('position_x')
             position_y = request.data.get('position_y')
+            status_update = request.data.get('status')
             
             table = Table.objects.get(id=table_id, user=request.user)
             if name:
@@ -175,9 +176,35 @@ class TableSystemViewSet(viewsets.ViewSet):
                 table.position_x = position_x
             if position_y is not None:
                 table.position_y = position_y
+            if status_update:
+                table.status = status_update
             table.save()
             
             return Response({'success': True})
+        except Exception as e:
+            return Response({'error': str(e)}, status=400)
+    
+    @action(detail=False, methods=['get'])
+    def get_table_info(self, request):
+        try:
+            table_id = request.query_params.get('table_id')
+            if not table_id:
+                return Response({'error': 'table_id required'}, status=400)
+            
+            table = Table.objects.get(id=table_id, user=request.user)
+            floor_name = table.room.floor.name if table.room and table.room.floor else 'Unknown Floor'
+            room_name = table.room.name if table.room else 'Unknown Room'
+            
+            return Response({
+                'success': True,
+                'table_name': f'{floor_name} - {room_name} - {table.name}',
+                'floor_name': floor_name,
+                'room_name': room_name,
+                'table_only_name': table.name,
+                'status': table.status
+            })
+        except Table.DoesNotExist:
+            return Response({'error': 'Table not found'}, status=404)
         except Exception as e:
             return Response({'error': str(e)}, status=400)
     
@@ -239,6 +266,48 @@ class TableSystemViewSet(viewsets.ViewSet):
                     table=table,
                     position=i
                 )
+            
+            return Response({'success': True})
+        except Exception as e:
+            return Response({'error': str(e)}, status=400)
+    
+    @action(detail=False, methods=['patch'])
+    def sync_chair_occupancy(self, request):
+        try:
+            from .models import KitchenOrder
+            table_id = request.data.get('table_id')
+            
+            table = Table.objects.get(id=table_id, user=request.user)
+            
+            # Check for active orders
+            active_order = KitchenOrder.objects.filter(
+                table_id=table_id,
+                status__in=['pending', 'preparing', 'ready'],
+                user=request.user
+            ).first()
+            
+            if active_order and active_order.chair_ids:
+                # Mark specific chairs as occupied
+                table.chairs.update(occupied=False)  # Reset all first
+                for chair_id in active_order.chair_ids:
+                    Chair.objects.filter(id=chair_id).update(occupied=True)
+            else:
+                # No active order, mark all chairs as available
+                table.chairs.update(occupied=False)
+            
+            return Response({'success': True})
+        except Exception as e:
+            return Response({'error': str(e)}, status=400)
+    
+    @action(detail=False, methods=['patch'])
+    def mark_chairs_occupied(self, request):
+        try:
+            chair_ids = request.data.get('chair_ids', [])
+            
+            for chair_id in chair_ids:
+                chair = Chair.objects.get(id=chair_id, table__user=request.user)
+                chair.occupied = True
+                chair.save()
             
             return Response({'success': True})
         except Exception as e:

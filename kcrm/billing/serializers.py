@@ -1,5 +1,6 @@
 from rest_framework import serializers
-from .models import Customer, Sale, SaleItem, MenuCategory, MenuItem, MenuIngredient
+from .models import Customer, Sale, SaleItem, MenuCategory, MenuItem, MenuIngredient, KitchenOrder, KitchenOrderItem
+from inventory.models import Stock
 
 class CustomerSerializer(serializers.ModelSerializer):
     class Meta:
@@ -30,6 +31,15 @@ class POSCreateSerializer(serializers.Serializer):
     amount_paid = serializers.DecimalField(max_digits=10, decimal_places=2)
     points_earned = serializers.IntegerField(default=0)
     mode = serializers.CharField(default='regular')
+    table_id = serializers.CharField(required=False, allow_blank=True)
+    table_name = serializers.CharField(required=False, allow_blank=True)
+    chair_ids = serializers.ListField(required=False)
+
+class StockSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Stock
+        fields = '__all__'
+        read_only_fields = ('user', 'economic_year', 'created_at', 'updated_at')
 
 class MenuCategorySerializer(serializers.ModelSerializer):
     class Meta:
@@ -78,3 +88,26 @@ class TableSerializer(serializers.Serializer):
     position_x = serializers.FloatField()
     position_y = serializers.FloatField()
     chairs = ChairSerializer(many=True)
+
+class KitchenOrderItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = KitchenOrderItem
+        fields = '__all__'
+
+class KitchenOrderSerializer(serializers.ModelSerializer):
+    items = KitchenOrderItemSerializer(many=True, read_only=True)
+    
+    class Meta:
+        model = KitchenOrder
+        fields = '__all__'
+        read_only_fields = ('user', 'economic_year', 'created_at', 'updated_at')
+    
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Add fallback for empty table names using table_id if available
+        if not data.get('table_name') or data.get('table_name').strip() == '' or 'Unknown Location - Unknown Table' in data.get('table_name', ''):
+            if data.get('table_id'):
+                data['table_name'] = f'Table {data.get("table_id")}'
+            else:
+                data['table_name'] = f'Order #{instance.id}'
+        return data

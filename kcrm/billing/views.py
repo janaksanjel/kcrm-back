@@ -8,10 +8,11 @@ from decimal import Decimal
 import uuid
 import json
 
-from .models import Customer, Sale, SaleItem, ProfitPercentage, MenuCategory, MenuItem, MenuIngredient
+from .models import Customer, Sale, SaleItem, ProfitPercentage, MenuCategory, MenuItem, MenuIngredient, KitchenOrder, KitchenOrderItem
 from .serializers import (
     CustomerSerializer, SaleSerializer, 
-    POSCreateSerializer, MenuCategorySerializer, MenuItemSerializer, MenuIngredientSerializer
+    POSCreateSerializer, MenuCategorySerializer, MenuItemSerializer, MenuIngredientSerializer,
+    KitchenOrderSerializer, StockSerializer
 )
 from inventory.models import Stock, Category, Supplier, Purchase
 
@@ -73,6 +74,8 @@ class SaleViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def create_pos_sale(self, request):
         serializer = POSCreateSerializer(data=request.data)
+        chair_ids = request.data.get('chair_ids', [])
+        
         if serializer.is_valid():
             try:
                 with transaction.atomic():
@@ -88,18 +91,17 @@ class SaleViewSet(viewsets.ModelViewSet):
                             'message': 'No active economic year found'
                         }, status=status.HTTP_400_BAD_REQUEST)
                     
-                    # Calculate totals from frontend or recalculate
+                    # Calculate totals
                     if 'total' in data and data['total']:
                         total = Decimal(str(data['total']))
                         subtotal = total + Decimal(str(data.get('discount', 0)))
                     else:
-                        # Recalculate if not provided
                         subtotal = Decimal('0')
                         for item in data['items']:
                             try:
                                 stock = Stock.objects.get(
-                                    id=item['id'], 
-                                    user=request.user, 
+                                    id=item['id'],
+                                    user=request.user,
                                     economic_year=active_eco_year
                                 )
                                 purchase = Purchase.objects.filter(
@@ -122,132 +124,49 @@ class SaleViewSet(viewsets.ModelViewSet):
                         discount = Decimal(str(data.get('discount', 0)))
                         total = subtotal - discount
                     
-                    # Validate and update stock
-                    items_data = []
-                    for item in data['items']:
-                        try:
-                            stock = Stock.objects.get(
-                                id=item['id'], 
-                                user=request.user, 
-                                economic_year=active_eco_year
-                            )
-                        except Stock.DoesNotExist:
-                            return Response({
-                                'success': False,
-                                'message': f'Stock item not found'
-                            }, status=status.HTTP_400_BAD_REQUEST)
-                            
-                        quantity = Decimal(str(item['quantity']))
+                    # Kitchen order for restaurant mode
+                    if data.get('mode') == 'restaurant':
+                        from .models import Table
+                        table_id = data.get('table_id', '')
+                        table_name = data.get('table_name', '')
                         
-                        if stock.current_stock < quantity:
-                            return Response({
-                                'success': False,
-                                'message': f'Insufficient stock for {stock.product_name}'
-                            }, status=status.HTTP_400_BAD_REQUEST)
+                        if table_id:
+                            try:
+                                table = Table.objects.get(id=table_id, user=request.user)
+                                floor_name = table.room.floor.name if table.room and table.room.floor else 'Floor'
+                                room_name = table.room.name if table.room else 'Room'
+                                table_name = f'{floor_name} - {room_name} - {table.name}'
+                            except Table.DoesNotExist:
+                                table_name = f'Table {table_id}'
+                        elif not table_name.strip() or 'Unknown' in table_name:
+                            table_name = f'Order #{timezone.now().strftime("%Y%m%d%H%M%S")}'
                         
-                        # Use price from frontend if available, otherwise calculate
-                        if 'unit_price' in item and item['unit_price']:
-                            unit_price = Decimal(str(item['unit_price']))
-                        else:
-                            # Get selling price from purchase
-                            purchase = Purchase.objects.filter(
-                                product_name=stock.product_name,
-                                user=request.user,
-                                economic_year=active_eco_year
-                            ).order_by('-created_at').first()
-                            
-                            if purchase and purchase.selling_price:
-                                unit_price = Decimal(str(purchase.selling_price))
-                            elif purchase:
-                                unit_price = Decimal(str(purchase.unit_price)) * Decimal('1.2')
-                            else:
-                                unit_price = Decimal('50')
-                        
-                        # Use total from frontend if available, otherwise calculate
-                        if 'total_price' in item and item['total_price']:
-                            total_price = Decimal(str(item['total_price']))
-                        else:
-                            total_price = quantity * unit_price
-                        
-                        # Use product name from frontend if available, otherwise from stock
-                        product_name = item.get('product_name', stock.product_name)
-                        
-                        items_data.append({
-                            'stock': stock,
-                            'quantity': quantity,
-                            'unit_price': unit_price,
-                            'total_price': total_price,
-                            'product_name': product_name,
-                            'unit': stock.unit
-                        })
-                    
-                    change_amount = data['amount_paid'] - total
-                    
-                    # Create sale
-                    points_earned = data.get('points_earned', 0)
-                    sale = Sale.objects.create(
-                        sale_number=f"POS-{timezone.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}",
-                        customer_name=data.get('customer_name', ''),
-                        customer_phone=data.get('customer_phone', ''),
-                        subtotal=subtotal,
-                        discount=Decimal(str(data.get('discount', 0))),
-                        tax=Decimal('0'),
-                        total=total,
-                        payment_method=data['payment_method'],
-                        amount_paid=data['amount_paid'],
-                        change_amount=change_amount,
-                        points_earned=points_earned,
-                        mode=data.get('mode', 'regular'),
-                        cashier=request.user,
-                        economic_year=active_eco_year
-                    )
-                    
-                    # Create sale items and update stock
-                    for item_data in items_data:
-                        # Remove stock from item_data before creating SaleItem
-                        stock_item = item_data.pop('stock')
-                        SaleItem.objects.create(
-                            sale=sale,
-                            **item_data
-                        )
-                        item_data['stock'] = stock_item  # Put it back for stock update
-                        
-                        # Update stock quantity
-                        stock_item = item_data['stock']
-                        stock_item.current_stock -= int(item_data['quantity'])
-                        stock_item.save()
-                    
-                    # Update customer points
-                    if data.get('customer_phone'):
-                        customer, created = Customer.objects.get_or_create(
-                            phone=data['customer_phone'],
+                        kitchen_order = KitchenOrder.objects.create(
+                            table_id=table_id,
+                            table_name=table_name,
+                            customer_name=data.get('customer_name', 'Walk-in Customer'),
+                            customer_phone=data.get('customer_phone', '0000000000'),
+                            chair_ids=chair_ids,
+                            total=total,
+                            status='pending',
                             user=request.user,
-                            economic_year=active_eco_year,
-                            defaults={
-                                'name': data.get('customer_name', ''),
-                                'total_purchases': 0,
-                                'total_spent': Decimal('0'),
-                                'loyalty_points': 0
-                            }
+                            economic_year=active_eco_year
                         )
-                        if not created and data.get('customer_name'):
-                            customer.name = data.get('customer_name')
                         
-                        customer.total_purchases += 1
-                        customer.total_spent += total
-                        customer.loyalty_points += points_earned
-                        customer.save()
-                        
-                        sale.customer = customer
-                        sale.save()
+                        # Create KitchenOrderItem objects
+                        for item in data['items']:
+                            KitchenOrderItem.objects.create(
+                                order=kitchen_order,
+                                name=item.get('product_name', item.get('name', 'Unknown Item')),
+                                quantity=int(item['quantity']),
+                                price=float(item.get('unit_price', item.get('price', 0))),
+                                total=float(item.get('total_price', item.get('total', 0)))
+                            )
                     
                     return Response({
                         'success': True,
-                        'sale_id': sale.id,
-                        'sale_number': sale.sale_number,
-                        'total': float(total),
-                        'change': float(change_amount),
-                        'points_earned': points_earned
+                        'message': 'Order created successfully',
+                        'total': float(total)
                     })
                     
             except Exception as e:
@@ -260,6 +179,7 @@ class SaleViewSet(viewsets.ModelViewSet):
             'success': False,
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
+
 
     @action(detail=False, methods=['get'])
     def dashboard_stats(self, request):
@@ -353,9 +273,16 @@ class SaleViewSet(viewsets.ModelViewSet):
             }
         })
 
-class StockViewSet(viewsets.ReadOnlyModelViewSet):
+class StockViewSet(viewsets.ModelViewSet):
+    serializer_class = StockSerializer
+    
     def get_queryset(self):
-        return Stock.objects.none()  # Not used since we override list method
+        from authentication.models import EconomicYear
+        try:
+            active_eco_year = EconomicYear.objects.get(user=self.request.user, is_active=True)
+            return Stock.objects.filter(user=self.request.user, economic_year=active_eco_year)
+        except EconomicYear.DoesNotExist:
+            return Stock.objects.none()
 
     def list(self, request, *args, **kwargs):
         try:
