@@ -30,6 +30,7 @@ class CustomerViewSet(viewsets.ModelViewSet):
             
         search = self.request.query_params.get('search', None)
         status_filter = self.request.query_params.get('status', None)
+        mode_filter = self.request.query_params.get('mode', None)
         
         if search:
             queryset = queryset.filter(
@@ -38,6 +39,8 @@ class CustomerViewSet(viewsets.ModelViewSet):
             )
         if status_filter:
             queryset = queryset.filter(status=status_filter)
+        if mode_filter:
+            queryset = queryset.filter(mode=mode_filter)
             
         return queryset.order_by('-created_at')
     
@@ -124,6 +127,9 @@ class SaleViewSet(viewsets.ModelViewSet):
                         discount = Decimal(str(data.get('discount', 0)))
                         total = subtotal - discount
                     
+                    # Calculate points earned (1 point per 500 spent)
+                    points_earned = int(float(total) // 500)
+                    
                     # Handle different modes
                     if data.get('mode') == 'restaurant':
                         # Restaurant mode - create kitchen order
@@ -170,10 +176,33 @@ class SaleViewSet(viewsets.ModelViewSet):
                                 total=float(item.get('total_price', item.get('total', 0)))
                             )
                         
+                        # Update customer statistics for restaurant mode too
+                        if data.get('customer_phone') and data.get('customer_phone') != '0000000000':
+                            customer, created = Customer.objects.get_or_create(
+                                phone=data.get('customer_phone'),
+                                user=request.user,
+                                economic_year=active_eco_year,
+                                mode='restaurant',
+                                defaults={
+                                    'name': data.get('customer_name', 'Walk-in Customer'),
+                                    'status': 'active'
+                                }
+                            )
+                            if not created and data.get('customer_name'):
+                                customer.name = data.get('customer_name')
+                            
+                            # Update customer statistics with calculated points
+                            if points_earned > 0:
+                                customer.loyalty_points = (customer.loyalty_points or 0) + points_earned
+                            customer.total_spent = (customer.total_spent or 0) + float(total)
+                            customer.total_purchases = (customer.total_purchases or 0) + 1
+                            customer.save()
+                        
                         return Response({
                             'success': True,
                             'message': 'Kitchen order created successfully',
-                            'total': float(total)
+                            'total': float(total),
+                            'points_earned': points_earned
                         })
                     
                     else:
@@ -185,6 +214,7 @@ class SaleViewSet(viewsets.ModelViewSet):
                                 phone=data.get('customer_phone'),
                                 user=request.user,
                                 economic_year=active_eco_year,
+                                mode=data.get('mode', 'kirana'),
                                 defaults={
                                     'name': data.get('customer_name', 'Walk-in Customer'),
                                     'status': 'active'
@@ -209,7 +239,7 @@ class SaleViewSet(viewsets.ModelViewSet):
                             total=total,
                             payment_method=data.get('payment_method', 'cash'),
                             amount_paid=Decimal(str(data.get('amount_paid', total))),
-                            points_earned=data.get('points_earned', 0),
+                            points_earned=points_earned,
                             mode=data.get('mode', 'kirana'),
                             cashier=request.user,
                             economic_year=active_eco_year
@@ -240,9 +270,13 @@ class SaleViewSet(viewsets.ModelViewSet):
                             except Stock.DoesNotExist:
                                 continue
                         
-                        # Update customer points if customer exists
-                        if customer and data.get('points_earned', 0) > 0:
-                            customer.loyalty_points = (customer.loyalty_points or 0) + data.get('points_earned', 0)
+                        # Update customer points and statistics if customer exists
+                        if customer:
+                            # Update loyalty points with calculated points
+                            if points_earned > 0:
+                                customer.loyalty_points = (customer.loyalty_points or 0) + points_earned
+                            
+                            # Always update total spent and purchases count
                             customer.total_spent = (customer.total_spent or 0) + float(total)
                             customer.total_purchases = (customer.total_purchases or 0) + 1
                             customer.save()
@@ -251,7 +285,8 @@ class SaleViewSet(viewsets.ModelViewSet):
                             'success': True,
                             'message': 'Sale completed successfully',
                             'sale_id': sale.id,
-                            'total': float(total)
+                            'total': float(total),
+                            'points_earned': points_earned
                         })
                     
             except Exception as e:

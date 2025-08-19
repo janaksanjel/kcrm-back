@@ -4,6 +4,12 @@ from django.contrib.auth import get_user_model
 User = get_user_model()
 
 class Customer(models.Model):
+    MODE_CHOICES = [
+        ('kirana', 'Kirana'),
+        ('restaurant', 'Restaurant'),
+        ('dealership', 'Dealership'),
+    ]
+    
     name = models.CharField(max_length=100)
     phone = models.CharField(max_length=15)
     email = models.EmailField(blank=True, null=True)
@@ -12,13 +18,14 @@ class Customer(models.Model):
     total_purchases = models.IntegerField(default=0)
     total_spent = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     status = models.CharField(max_length=20, choices=[('active', 'Active'), ('inactive', 'Inactive')], default='active')
+    mode = models.CharField(max_length=20, choices=MODE_CHOICES, default='kirana')
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     economic_year = models.ForeignKey('authentication.EconomicYear', on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
-        unique_together = ['phone', 'user', 'economic_year']
+        unique_together = ['phone', 'user', 'economic_year', 'mode']
 
     def __str__(self):
         return self.name
