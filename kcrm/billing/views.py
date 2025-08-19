@@ -124,20 +124,27 @@ class SaleViewSet(viewsets.ModelViewSet):
                         discount = Decimal(str(data.get('discount', 0)))
                         total = subtotal - discount
                     
-                    # Kitchen order for restaurant mode
+                    # Handle different modes
                     if data.get('mode') == 'restaurant':
-                        from .models import Table
+                        # Restaurant mode - create kitchen order
+                        try:
+                            from .models import Table
+                        except ImportError:
+                            # Table model might not exist, use default table name
+                            Table = None
                         table_id = data.get('table_id', '')
                         table_name = data.get('table_name', '')
                         
-                        if table_id:
+                        if table_id and Table:
                             try:
                                 table = Table.objects.get(id=table_id, user=request.user)
                                 floor_name = table.room.floor.name if table.room and table.room.floor else 'Floor'
                                 room_name = table.room.name if table.room else 'Room'
                                 table_name = f'{floor_name} - {room_name} - {table.name}'
-                            except Table.DoesNotExist:
+                            except (Table.DoesNotExist, AttributeError):
                                 table_name = f'Table {table_id}'
+                        elif table_id:
+                            table_name = f'Table {table_id}'
                         elif not table_name.strip() or 'Unknown' in table_name:
                             table_name = f'Order #{timezone.now().strftime("%Y%m%d%H%M%S")}'
                         
@@ -162,12 +169,90 @@ class SaleViewSet(viewsets.ModelViewSet):
                                 price=float(item.get('unit_price', item.get('price', 0))),
                                 total=float(item.get('total_price', item.get('total', 0)))
                             )
+                        
+                        return Response({
+                            'success': True,
+                            'message': 'Kitchen order created successfully',
+                            'total': float(total)
+                        })
                     
-                    return Response({
-                        'success': True,
-                        'message': 'Order created successfully',
-                        'total': float(total)
-                    })
+                    else:
+                        # Kirana/Dealership mode - create sale record
+                        # Get or create customer
+                        customer = None
+                        if data.get('customer_phone') and data.get('customer_phone') != '0000000000':
+                            customer, created = Customer.objects.get_or_create(
+                                phone=data.get('customer_phone'),
+                                user=request.user,
+                                economic_year=active_eco_year,
+                                defaults={
+                                    'name': data.get('customer_name', 'Walk-in Customer'),
+                                    'status': 'active'
+                                }
+                            )
+                            if not created and data.get('customer_name'):
+                                customer.name = data.get('customer_name')
+                                customer.save()
+                        
+                        # Generate unique sale number
+                        import time
+                        sale_number = f"{data.get('mode', 'kirana').upper()}-{timezone.now().strftime('%Y%m%d')}-{int(time.time() * 1000) % 1000000}"
+                        
+                        # Create sale record
+                        sale = Sale.objects.create(
+                            sale_number=sale_number,
+                            customer=customer,
+                            customer_name=data.get('customer_name', 'Walk-in Customer'),
+                            customer_phone=data.get('customer_phone', '0000000000'),
+                            subtotal=subtotal,
+                            discount=Decimal(str(data.get('discount', 0))),
+                            total=total,
+                            payment_method=data.get('payment_method', 'cash'),
+                            amount_paid=Decimal(str(data.get('amount_paid', total))),
+                            points_earned=data.get('points_earned', 0),
+                            mode=data.get('mode', 'kirana'),
+                            cashier=request.user,
+                            economic_year=active_eco_year
+                        )
+                        
+                        # Create sale items and update stock
+                        for item in data['items']:
+                            try:
+                                stock = Stock.objects.get(
+                                    id=item['id'],
+                                    user=request.user,
+                                    economic_year=active_eco_year
+                                )
+                                
+                                # Create sale item
+                                SaleItem.objects.create(
+                                    sale=sale,
+                                    product_name=item.get('product_name', stock.product_name),
+                                    quantity=Decimal(str(item['quantity'])),
+                                    unit_price=Decimal(str(item.get('unit_price', 0))),
+                                    total_price=Decimal(str(item.get('total_price', 0)))
+                                )
+                                
+                                # Update stock
+                                stock.current_stock -= Decimal(str(item['quantity']))
+                                stock.save()
+                                
+                            except Stock.DoesNotExist:
+                                continue
+                        
+                        # Update customer points if customer exists
+                        if customer and data.get('points_earned', 0) > 0:
+                            customer.loyalty_points = (customer.loyalty_points or 0) + data.get('points_earned', 0)
+                            customer.total_spent = (customer.total_spent or 0) + float(total)
+                            customer.total_purchases = (customer.total_purchases or 0) + 1
+                            customer.save()
+                        
+                        return Response({
+                            'success': True,
+                            'message': 'Sale completed successfully',
+                            'sale_id': sale.id,
+                            'total': float(total)
+                        })
                     
             except Exception as e:
                 return Response({
@@ -189,7 +274,7 @@ class SaleViewSet(viewsets.ModelViewSet):
             today = timezone.now().date()
             
             # Filter by mode if provided
-            mode_filter = request.query_params.get('mode', None)
+            mode_filter = request.query_params.get('mode', 'kirana')
             today_sales = Sale.objects.filter(
                 cashier=request.user, 
                 economic_year=active_eco_year,
@@ -225,53 +310,88 @@ class SaleViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def reports(self, request):
-        today = timezone.now().date()
-        
-        # Today's stats
-        today_sales = Sale.objects.filter(created_at__date=today)
-        today_total = sum(sale.total for sale in today_sales)
-        today_orders = today_sales.count()
-        
-        # This week's stats
-        week_start = today - timedelta(days=today.weekday())
-        week_sales = Sale.objects.filter(created_at__date__gte=week_start)
-        week_total = sum(sale.total for sale in week_sales)
-        
-        # Payment method breakdown
-        payment_stats = {}
-        for method in ['cash', 'card', 'upi']:
-            payment_stats[method] = sum(
-                sale.total for sale in today_sales.filter(payment_method=method)
+        from authentication.models import EconomicYear
+        try:
+            active_eco_year = EconomicYear.objects.get(user=request.user, is_active=True)
+            today = timezone.now().date()
+            mode_filter = request.query_params.get('mode', 'kirana')
+            
+            # Today's stats
+            today_sales = Sale.objects.filter(
+                cashier=request.user,
+                economic_year=active_eco_year,
+                created_at__date=today
             )
-        
-        # Hourly data for today
-        hourly_data = []
-        for hour in range(9, 18):  # 9 AM to 5 PM
-            hour_sales = today_sales.filter(
-                created_at__hour=hour
+            if mode_filter:
+                today_sales = today_sales.filter(mode=mode_filter)
+                
+            today_total = sum(sale.total for sale in today_sales)
+            today_orders = today_sales.count()
+            
+            # This week's stats
+            week_start = today - timedelta(days=today.weekday())
+            week_sales = Sale.objects.filter(
+                cashier=request.user,
+                economic_year=active_eco_year,
+                created_at__date__gte=week_start
             )
-            hourly_data.append({
-                'hour': f"{hour}:00",
-                'sales': sum(sale.total for sale in hour_sales),
-                'orders': hour_sales.count()
-            })
-        
-        return Response({
-            'success': True,
-            'data': {
-                'today': {
-                    'total_sales': float(today_total),
-                    'total_orders': today_orders,
-                    'avg_order_value': float(today_total / today_orders) if today_orders > 0 else 0,
-                    'payment_methods': {k: float(v) for k, v in payment_stats.items()},
-                    'hourly_data': hourly_data
-                },
-                'week': {
-                    'total_sales': float(week_total),
-                    'total_orders': week_sales.count()
+            if mode_filter:
+                week_sales = week_sales.filter(mode=mode_filter)
+                
+            week_total = sum(sale.total for sale in week_sales)
+            
+            # Payment method breakdown
+            payment_stats = {}
+            for method in ['cash', 'card', 'upi']:
+                payment_stats[method] = sum(
+                    sale.total for sale in today_sales.filter(payment_method=method)
+                )
+            
+            # Hourly data for today
+            hourly_data = []
+            for hour in range(9, 18):  # 9 AM to 5 PM
+                hour_sales = today_sales.filter(
+                    created_at__hour=hour
+                )
+                hourly_data.append({
+                    'hour': f"{hour}:00",
+                    'sales': sum(sale.total for sale in hour_sales),
+                    'orders': hour_sales.count()
+                })
+            
+            return Response({
+                'success': True,
+                'data': {
+                    'today': {
+                        'total_sales': float(today_total),
+                        'total_orders': today_orders,
+                        'avg_order_value': float(today_total / today_orders) if today_orders > 0 else 0,
+                        'payment_methods': {k: float(v) for k, v in payment_stats.items()},
+                        'hourly_data': hourly_data
+                    },
+                    'week': {
+                        'total_sales': float(week_total),
+                        'total_orders': week_sales.count()
+                    }
                 }
-            }
-        })
+            })
+        except EconomicYear.DoesNotExist:
+            return Response({
+                'success': True,
+                'data': {
+                    'today': {
+                        'total_sales': 0,
+                        'total_orders': 0,
+                        'avg_order_value': 0,
+                        'payment_methods': {'cash': 0, 'card': 0, 'upi': 0},
+                        'hourly_data': []
+                    },
+                    'week': {
+                        'total_sales': 0,
+                        'total_orders': 0
+                    }
+                }
+            })
 
 class StockViewSet(viewsets.ModelViewSet):
     serializer_class = StockSerializer
