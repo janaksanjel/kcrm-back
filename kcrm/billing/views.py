@@ -120,7 +120,8 @@ class SaleViewSet(viewsets.ModelViewSet):
                                 else:
                                     unit_price = Decimal('50')
                                 
-                                subtotal += unit_price * Decimal(str(item['quantity']))
+                                item_total = unit_price * Decimal(str(item['quantity']))
+                                subtotal += item_total
                             except Stock.DoesNotExist:
                                 continue
                         
@@ -128,7 +129,7 @@ class SaleViewSet(viewsets.ModelViewSet):
                         total = subtotal - discount
                     
                     # Calculate points earned (1 point per 500 spent)
-                    points_earned = int(float(total) // 500)
+                    points_earned = int(total // Decimal('500'))
                     
                     # Handle different modes
                     if data.get('mode') == 'restaurant':
@@ -155,7 +156,7 @@ class SaleViewSet(viewsets.ModelViewSet):
                             table_name = f'Order #{timezone.now().strftime("%Y%m%d%H%M%S")}'
                         
                         kitchen_order = KitchenOrder.objects.create(
-                            table_id=table_id,
+                            table_id=str(table_id),
                             table_name=table_name,
                             customer_name=data.get('customer_name', 'Walk-in Customer'),
                             customer_phone=data.get('customer_phone', '0000000000'),
@@ -172,37 +173,42 @@ class SaleViewSet(viewsets.ModelViewSet):
                                 order=kitchen_order,
                                 name=item.get('product_name', item.get('name', 'Unknown Item')),
                                 quantity=int(item['quantity']),
-                                price=float(item.get('unit_price', item.get('price', 0))),
-                                total=float(item.get('total_price', item.get('total', 0)))
+                                price=Decimal(str(item.get('unit_price', item.get('price', 0)))),
+                                total=Decimal(str(item.get('total_price', item.get('total', 0))))
                             )
                         
                         # Update customer statistics for restaurant mode too
                         if data.get('customer_phone') and data.get('customer_phone') != '0000000000':
-                            customer, created = Customer.objects.get_or_create(
-                                phone=data.get('customer_phone'),
-                                user=request.user,
-                                economic_year=active_eco_year,
-                                mode='restaurant',
-                                defaults={
-                                    'name': data.get('customer_name', 'Walk-in Customer'),
-                                    'status': 'active'
-                                }
-                            )
-                            if not created and data.get('customer_name'):
-                                customer.name = data.get('customer_name')
-                            
-                            # Update customer statistics with calculated points
-                            if points_earned > 0:
-                                customer.loyalty_points = (customer.loyalty_points or 0) + points_earned
-                            customer.total_spent = (customer.total_spent or 0) + float(total)
-                            customer.total_purchases = (customer.total_purchases or 0) + 1
-                            customer.save()
+                            try:
+                                customer, created = Customer.objects.get_or_create(
+                                    phone=data.get('customer_phone'),
+                                    user=request.user,
+                                    economic_year=active_eco_year,
+                                    mode='restaurant',
+                                    defaults={
+                                        'name': data.get('customer_name', 'Walk-in Customer'),
+                                        'status': 'active'
+                                    }
+                                )
+                                if not created and data.get('customer_name'):
+                                    customer.name = data.get('customer_name')
+                                
+                                # Update customer statistics with calculated points
+                                if points_earned > 0:
+                                    customer.loyalty_points = (customer.loyalty_points or 0) + points_earned
+                                customer.total_spent = (customer.total_spent or Decimal('0')) + total
+                                customer.total_purchases = (customer.total_purchases or 0) + 1
+                                customer.save()
+                            except Exception as customer_error:
+                                # Log the error but don't fail the entire order
+                                print(f"Customer update error: {customer_error}")
                         
                         return Response({
                             'success': True,
                             'message': 'Kitchen order created successfully',
                             'total': float(total),
-                            'points_earned': points_earned
+                            'points_earned': points_earned,
+                            'order_id': kitchen_order.id
                         })
                     
                     else:
@@ -210,19 +216,36 @@ class SaleViewSet(viewsets.ModelViewSet):
                         # Get or create customer
                         customer = None
                         if data.get('customer_phone') and data.get('customer_phone') != '0000000000':
-                            customer, created = Customer.objects.get_or_create(
-                                phone=data.get('customer_phone'),
-                                user=request.user,
-                                economic_year=active_eco_year,
-                                mode=data.get('mode', 'kirana'),
-                                defaults={
-                                    'name': data.get('customer_name', 'Walk-in Customer'),
-                                    'status': 'active'
-                                }
-                            )
-                            if not created and data.get('customer_name'):
-                                customer.name = data.get('customer_name')
-                                customer.save()
+                            try:
+                                customer, created = Customer.objects.get_or_create(
+                                    phone=data.get('customer_phone'),
+                                    user=request.user,
+                                    economic_year=active_eco_year,
+                                    mode=data.get('mode', 'kirana'),
+                                    defaults={
+                                        'name': data.get('customer_name', 'Walk-in Customer'),
+                                        'status': 'active'
+                                    }
+                                )
+                                if not created and data.get('customer_name'):
+                                    customer.name = data.get('customer_name')
+                                    customer.save()
+                            except Exception as customer_error:
+                                # If customer creation fails, try to get existing customer
+                                try:
+                                    customer = Customer.objects.get(
+                                        phone=data.get('customer_phone'),
+                                        user=request.user,
+                                        economic_year=active_eco_year,
+                                        mode=data.get('mode', 'kirana')
+                                    )
+                                    if data.get('customer_name'):
+                                        customer.name = data.get('customer_name')
+                                        customer.save()
+                                except Customer.DoesNotExist:
+                                    # Customer doesn't exist and creation failed, continue without customer
+                                    print(f"Customer creation/retrieval failed: {customer_error}")
+                                    customer = None
                         
                         # Generate unique sale number
                         import time
@@ -277,7 +300,7 @@ class SaleViewSet(viewsets.ModelViewSet):
                                 customer.loyalty_points = (customer.loyalty_points or 0) + points_earned
                             
                             # Always update total spent and purchases count
-                            customer.total_spent = (customer.total_spent or 0) + float(total)
+                            customer.total_spent = (customer.total_spent or Decimal('0')) + total
                             customer.total_purchases = (customer.total_purchases or 0) + 1
                             customer.save()
                         
