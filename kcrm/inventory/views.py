@@ -259,13 +259,15 @@ def stocks(request):
                 if latest_purchase:
                     stock_data['category_name'] = latest_purchase.category.name if latest_purchase.category else 'General'
                     stock_data['supplier_name'] = latest_purchase.supplier.name if latest_purchase.supplier else 'Unknown'
-                    stock_data['cost_price'] = float(latest_purchase.unit_price)
-                    stock_data['selling_price'] = float(latest_purchase.selling_price) if latest_purchase.selling_price else float(latest_purchase.unit_price) * 1.2
+                    # Use stock's cost_price if available, otherwise use purchase unit_price
+                    stock_data['cost_price'] = float(stock.cost_price) if stock.cost_price > 0 else float(latest_purchase.unit_price)
+                    # Use stock's selling_price if available, otherwise use purchase selling_price
+                    stock_data['selling_price'] = float(stock.selling_price) if stock.selling_price > 0 else (float(latest_purchase.selling_price) if latest_purchase.selling_price else float(latest_purchase.unit_price) * 1.2)
                 else:
                     stock_data['category_name'] = 'General'
                     stock_data['supplier_name'] = 'Unknown'
-                    stock_data['cost_price'] = 0
-                    stock_data['selling_price'] = 0
+                    stock_data['cost_price'] = float(stock.cost_price) if stock.cost_price > 0 else 0
+                    stock_data['selling_price'] = float(stock.selling_price) if stock.selling_price > 0 else 0
             except Exception as e:
                 stock_data['category_name'] = 'General'
                 stock_data['supplier_name'] = 'Unknown'
