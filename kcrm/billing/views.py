@@ -262,6 +262,7 @@ class SaleViewSet(viewsets.ModelViewSet):
                             total=total,
                             payment_method=data.get('payment_method', 'cash'),
                             amount_paid=Decimal(str(data.get('amount_paid', total))),
+                            credit_amount=Decimal(str(data.get('credit_amount', 0))),
                             points_earned=points_earned,
                             mode=data.get('mode', 'kirana'),
                             cashier=request.user,
@@ -400,7 +401,7 @@ class SaleViewSet(viewsets.ModelViewSet):
             
             # Payment method breakdown
             payment_stats = {}
-            for method in ['cash', 'card', 'upi']:
+            for method in ['cash', 'card', 'upi', 'credit', 'qr']:
                 payment_stats[method] = sum(
                     sale.total for sale in today_sales.filter(payment_method=method)
                 )
@@ -441,7 +442,7 @@ class SaleViewSet(viewsets.ModelViewSet):
                         'total_sales': 0,
                         'total_orders': 0,
                         'avg_order_value': 0,
-                        'payment_methods': {'cash': 0, 'card': 0, 'upi': 0},
+                        'payment_methods': {'cash': 0, 'card': 0, 'upi': 0, 'credit': 0, 'qr': 0},
                         'hourly_data': []
                     },
                     'week': {

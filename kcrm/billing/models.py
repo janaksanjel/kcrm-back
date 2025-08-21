@@ -34,7 +34,8 @@ class Sale(models.Model):
     PAYMENT_METHODS = [
         ('cash', 'Cash'),
         ('card', 'Card'),
-        ('upi', 'UPI'),
+        ('credit', 'Credit'),
+        ('qr', 'QR'),
     ]
     
     MODE_CHOICES = [
@@ -53,6 +54,7 @@ class Sale(models.Model):
     payment_method = models.CharField(max_length=10, choices=PAYMENT_METHODS)
     amount_paid = models.DecimalField(max_digits=10, decimal_places=2)
     change_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    credit_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     points_earned = models.IntegerField(default=0)
     mode = models.CharField(max_length=10, choices=MODE_CHOICES, default='regular')
     cashier = models.ForeignKey(User, on_delete=models.CASCADE)
