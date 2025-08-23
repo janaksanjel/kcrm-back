@@ -44,10 +44,120 @@ class CustomerViewSet(viewsets.ModelViewSet):
             
         return queryset.order_by('-created_at')
     
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        data = serializer.data
+        
+        # Add credit balance for each customer
+        for customer_data in data:
+            customer_id = customer_data['id']
+            credit_sales = Sale.objects.filter(
+                customer_id=customer_id,
+                payment_method='credit'
+            ).aggregate(total_credit=models.Sum('credit_amount'))['total_credit'] or 0
+            customer_data['credit_balance'] = float(credit_sales)
+        
+        return Response(data)
+    
     def perform_create(self, serializer):
         from authentication.models import EconomicYear
         active_eco_year = EconomicYear.objects.get(user=self.request.user, is_active=True)
         serializer.save(user=self.request.user, economic_year=active_eco_year)
+    
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        data = serializer.data
+        
+        # Add credit balance calculation
+        credit_sales = Sale.objects.filter(
+            customer=instance,
+            payment_method='credit'
+        ).aggregate(total_credit=models.Sum('credit_amount'))['total_credit'] or 0
+        
+        data['credit_balance'] = float(credit_sales)
+        data['loyalty_points'] = instance.loyalty_points or 0
+        return Response(data)
+    
+    @action(detail=True, methods=['get'])
+    def transactions(self, request, pk=None):
+        from django.core.paginator import Paginator
+        
+        customer = self.get_object()
+        
+        # Get query parameters
+        search = request.query_params.get('search', '')
+        transaction_type = request.query_params.get('type', '')
+        page = int(request.query_params.get('page', 1))
+        date_from = request.query_params.get('date_from')
+        date_to = request.query_params.get('date_to')
+        
+        # Get sales for this customer
+        sales = Sale.objects.filter(customer=customer).order_by('-created_at')
+        
+        # Apply search filter
+        if search:
+            sales = sales.filter(
+                models.Q(sale_number__icontains=search) |
+                models.Q(items__product_name__icontains=search)
+            ).distinct()
+        
+        # Apply date filters
+        if date_from:
+            sales = sales.filter(created_at__date__gte=date_from)
+        if date_to:
+            sales = sales.filter(created_at__date__lte=date_to)
+        
+        # Apply type filter
+        if transaction_type == 'sale':
+            sales = sales.exclude(payment_method='credit')
+        elif transaction_type == 'credit':
+            sales = sales.filter(payment_method='credit')
+        
+        transactions = []
+        for sale in sales:
+            # Get sale items
+            sale_items = []
+            for item in sale.items.all():
+                sale_items.append({
+                    'name': item.product_name,
+                    'quantity': float(item.quantity),
+                    'total': float(item.total_price)
+                })
+            
+            transaction_data = {
+                'id': sale.id,
+                'type': 'sale',
+                'amount': float(sale.total),
+                'description': f'Sale #{sale.sale_number}',
+                'date': sale.created_at.isoformat(),
+                'payment_method': sale.payment_method,
+                'status': 'completed',
+                'items': sale_items
+            }
+            
+            # Add credit details if it's a credit sale
+            if sale.payment_method == 'credit' and sale.credit_amount > 0:
+                transaction_data['type'] = 'credit'
+                transaction_data['credit_details'] = {
+                    'total_amount': float(sale.total),
+                    'paid_amount': float(sale.amount_paid),
+                    'credit_amount': float(sale.credit_amount)
+                }
+            
+            transactions.append(transaction_data)
+        
+        # Paginate results
+        paginator = Paginator(transactions, 10)
+        page_obj = paginator.get_page(page)
+        
+        return Response({
+            'results': list(page_obj),
+            'total_pages': paginator.num_pages,
+            'current_page': page,
+            'total_count': paginator.count
+        })
 
 class SaleViewSet(viewsets.ModelViewSet):
     queryset = Sale.objects.all()
