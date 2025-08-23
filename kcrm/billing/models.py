@@ -35,6 +35,7 @@ class Sale(models.Model):
         ('cash', 'Cash'),
         ('card', 'Card'),
         ('credit', 'Credit'),
+        ('credit_collection', 'Credit Collection'),
         ('qr', 'QR'),
     ]
     
@@ -51,7 +52,7 @@ class Sale(models.Model):
     discount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     tax = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     total = models.DecimalField(max_digits=10, decimal_places=2)
-    payment_method = models.CharField(max_length=10, choices=PAYMENT_METHODS)
+    payment_method = models.CharField(max_length=20, choices=PAYMENT_METHODS)
     amount_paid = models.DecimalField(max_digits=10, decimal_places=2)
     change_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     credit_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)

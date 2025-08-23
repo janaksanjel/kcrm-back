@@ -56,7 +56,13 @@ class CustomerViewSet(viewsets.ModelViewSet):
                 customer_id=customer_id,
                 payment_method='credit'
             ).aggregate(total_credit=models.Sum('credit_amount'))['total_credit'] or 0
-            customer_data['credit_balance'] = float(credit_sales)
+            
+            credit_collections = Sale.objects.filter(
+                customer_id=customer_id,
+                payment_method='credit_collection'
+            ).aggregate(total_collected=models.Sum('amount_paid'))['total_collected'] or 0
+            
+            customer_data['credit_balance'] = float(credit_sales) - float(credit_collections)
         
         return Response(data)
     
@@ -76,9 +82,136 @@ class CustomerViewSet(viewsets.ModelViewSet):
             payment_method='credit'
         ).aggregate(total_credit=models.Sum('credit_amount'))['total_credit'] or 0
         
-        data['credit_balance'] = float(credit_sales)
+        credit_collections = Sale.objects.filter(
+            customer=instance,
+            payment_method='credit_collection'
+        ).aggregate(total_collected=models.Sum('amount_paid'))['total_collected'] or 0
+        
+        data['credit_balance'] = float(credit_sales) - float(credit_collections)
         data['loyalty_points'] = instance.loyalty_points or 0
         return Response(data)
+    
+    @action(detail=True, methods=['post'])
+    def collect_credit(self, request, pk=None):
+        try:
+            customer = self.get_object()
+            amount = request.data.get('amount')
+            notes = request.data.get('notes', '')
+            
+            if not amount:
+                return Response({
+                    'success': False,
+                    'message': 'Amount is required'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            try:
+                amount = float(amount)
+                if amount <= 0:
+                    return Response({
+                        'success': False,
+                        'message': 'Amount must be greater than 0'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            except (ValueError, TypeError):
+                return Response({
+                    'success': False,
+                    'message': 'Invalid amount format'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Calculate current credit balance (credit sales minus collections)
+            credit_sales = Sale.objects.filter(
+                customer=customer,
+                payment_method='credit'
+            ).aggregate(total_credit=models.Sum('credit_amount'))['total_credit'] or 0
+            
+            credit_collections = Sale.objects.filter(
+                customer=customer,
+                payment_method='credit_collection'
+            ).aggregate(total_collected=models.Sum('amount_paid'))['total_collected'] or 0
+            
+            current_credit_balance = float(credit_sales) - float(credit_collections)
+            
+            if amount > current_credit_balance:
+                return Response({
+                    'success': False,
+                    'message': f'Amount ({amount}) exceeds credit balance ({current_credit_balance})'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            with transaction.atomic():
+                from authentication.models import EconomicYear
+                try:
+                    active_eco_year = EconomicYear.objects.get(user=request.user, is_active=True)
+                except EconomicYear.DoesNotExist:
+                    return Response({
+                        'success': False,
+                        'message': 'No active economic year found'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                # Generate receipt number
+                import time
+                receipt_number = f"CR-{timezone.now().strftime('%Y%m%d')}-{int(time.time() * 1000) % 1000000}"
+                
+                # Create a payment record
+                payment_sale = Sale.objects.create(
+                    sale_number=receipt_number,
+                    customer=customer,
+                    customer_name=customer.name,
+                    customer_phone=customer.phone,
+                    subtotal=Decimal('0'),
+                    discount=Decimal('0'),
+                    total=Decimal(str(amount)),
+                    payment_method='credit_collection',
+                    amount_paid=Decimal(str(amount)),
+                    credit_amount=Decimal('0'),
+                    points_earned=0,
+                    mode=customer.mode,
+                    cashier=request.user,
+                    economic_year=active_eco_year
+                )
+                
+                # Calculate remaining credit after this collection
+                remaining_credit = max(0, current_credit_balance - amount)
+                
+                # Recalculate the actual remaining credit after the transaction
+                updated_credit_sales = Sale.objects.filter(
+                    customer=customer,
+                    payment_method='credit'
+                ).aggregate(total_credit=models.Sum('credit_amount'))['total_credit'] or 0
+                
+                updated_credit_collections = Sale.objects.filter(
+                    customer=customer,
+                    payment_method='credit_collection'
+                ).aggregate(total_collected=models.Sum('amount_paid'))['total_collected'] or 0
+                
+                actual_remaining_credit = float(updated_credit_sales) - float(updated_credit_collections)
+                
+                print(f"Debug - Customer: {customer.name}")
+                print(f"Debug - Credit sales: {updated_credit_sales}")
+                print(f"Debug - Credit collections: {updated_credit_collections}")
+                print(f"Debug - Remaining credit: {actual_remaining_credit}")
+                print(f"Debug - Amount collected: {amount}")
+                print(f"Debug - Original balance: {current_credit_balance}")
+                
+                return Response({
+                    'success': True,
+                    'message': 'Credit collected successfully',
+                    'data': {
+                        'receipt_number': receipt_number,
+                        'amount': amount,
+                        'remaining_credit': round(max(0, actual_remaining_credit), 2),
+                        'notes': notes,
+                        'date': timezone.now().isoformat(),
+                        'customer_name': customer.name,
+                        'customer_phone': customer.phone
+                    }
+                })
+        except Exception as e:
+            import traceback
+            print(f"Error in collect_credit: {str(e)}")
+            print(traceback.format_exc())
+            return Response({
+                'success': False,
+                'message': f'Internal server error: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=True, methods=['get'])
     def transactions(self, request, pk=None):
@@ -111,9 +244,11 @@ class CustomerViewSet(viewsets.ModelViewSet):
         
         # Apply type filter
         if transaction_type == 'sale':
-            sales = sales.exclude(payment_method='credit')
+            sales = sales.exclude(payment_method__in=['credit', 'credit_collection'])
         elif transaction_type == 'credit':
             sales = sales.filter(payment_method='credit')
+        elif transaction_type == 'payment':
+            sales = sales.filter(payment_method='credit_collection')
         
         transactions = []
         for sale in sales:
@@ -126,20 +261,33 @@ class CustomerViewSet(viewsets.ModelViewSet):
                     'total': float(item.total_price)
                 })
             
+            # Determine transaction type and description
+            if sale.payment_method == 'credit_collection':
+                transaction_type = 'payment'
+                description = f'Credit Collection #{sale.sale_number}'
+                amount = float(sale.amount_paid)
+            elif sale.payment_method == 'credit' and sale.credit_amount > 0:
+                transaction_type = 'credit'
+                description = f'Credit Sale #{sale.sale_number}'
+                amount = float(sale.total)
+            else:
+                transaction_type = 'sale'
+                description = f'Sale #{sale.sale_number}'
+                amount = float(sale.total)
+            
             transaction_data = {
                 'id': sale.id,
-                'type': 'sale',
-                'amount': float(sale.total),
-                'description': f'Sale #{sale.sale_number}',
+                'type': transaction_type,
+                'amount': amount,
+                'description': description,
                 'date': sale.created_at.isoformat(),
                 'payment_method': sale.payment_method,
                 'status': 'completed',
-                'items': sale_items
+                'items': sale_items if sale.payment_method != 'credit_collection' else []
             }
             
             # Add credit details if it's a credit sale
             if sale.payment_method == 'credit' and sale.credit_amount > 0:
-                transaction_data['type'] = 'credit'
                 transaction_data['credit_details'] = {
                     'total_amount': float(sale.total),
                     'paid_amount': float(sale.amount_paid),
