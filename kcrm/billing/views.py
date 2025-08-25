@@ -414,13 +414,14 @@ class SaleViewSet(viewsets.ModelViewSet):
                             table_name = f'Order #{timezone.now().strftime("%Y%m%d%H%M%S")}'
                         
                         kitchen_order = KitchenOrder.objects.create(
-                            table_id=str(table_id),
+                            table_id=str(table_id) if table_id else '',
                             table_name=table_name,
                             customer_name=data.get('customer_name', 'Walk-in Customer'),
                             customer_phone=data.get('customer_phone', '0000000000'),
                             chair_ids=chair_ids,
                             total=total,
                             status='pending',
+                            notes=data.get('notes', ''),
                             user=request.user,
                             economic_year=active_eco_year
                         )

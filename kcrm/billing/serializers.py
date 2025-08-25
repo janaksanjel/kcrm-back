@@ -27,14 +27,15 @@ class POSCreateSerializer(serializers.Serializer):
     customer_phone = serializers.CharField(required=False, allow_blank=True)
     discount = serializers.DecimalField(max_digits=10, decimal_places=2, default=0)
     total = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
-    payment_method = serializers.ChoiceField(choices=['cash', 'card', 'upi', 'credit', 'qr'])
-    amount_paid = serializers.DecimalField(max_digits=10, decimal_places=2)
+    payment_method = serializers.ChoiceField(choices=['cash', 'card', 'upi', 'credit', 'qr'], required=False)
+    amount_paid = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
     credit_amount = serializers.DecimalField(max_digits=10, decimal_places=2, default=0)
     points_earned = serializers.IntegerField(default=0)
     mode = serializers.CharField(default='regular')
-    table_id = serializers.CharField(required=False, allow_blank=True)
+    table_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     table_name = serializers.CharField(required=False, allow_blank=True)
     chair_ids = serializers.ListField(required=False)
+    notes = serializers.CharField(required=False, allow_blank=True)
 
 class StockSerializer(serializers.ModelSerializer):
     class Meta:
