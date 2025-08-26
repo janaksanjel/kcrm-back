@@ -25,6 +25,7 @@ INSTALLED_APPS = [
     'authentication',
     'inventory',
     'billing',
+    'reports',
 ]
 
 MIDDLEWARE = [
