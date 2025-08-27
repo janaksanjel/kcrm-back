@@ -1,7 +1,7 @@
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from django.db.models import Sum, Count, Avg, F
+from django.db.models import Sum, Count, Avg, F, Q
 from django.db import models
 from billing.models import Sale
 from inventory.models import Stock
@@ -29,21 +29,88 @@ def get_reports(request):
 
 def generate_sales_data(user, mode):
     from authentication.models import EconomicYear
+    from billing.models import SaleItem, KitchenOrder, KitchenOrderItem
     
-    # Get active economic year
-    active_eco_year = EconomicYear.objects.filter(user=user, is_active=True).first()
-    
-    # Get sales filtered by mode
-    if mode == 'dealership':
-        sales = Sale.objects.filter(cashier=user, mode='regular')
-    elif mode == 'restaurant':
-        sales = Sale.objects.filter(cashier=user, mode='regular')
-    else:
+    # Filter sales by actual mode from database
+    if mode == 'kirana':
         sales = Sale.objects.filter(cashier=user, mode='kirana')
+    elif mode == 'dealership':
+        sales = Sale.objects.filter(cashier=user, mode='dealership')
+    elif mode == 'restaurant':
+        # Restaurant uses kitchen orders, not regular sales
+        kitchen_orders = KitchenOrder.objects.filter(
+            user=user,
+            status__in=['served', 'completed', 'finalized']
+        )
+        
+        # Calculate metrics from kitchen orders
+        today_sales = kitchen_orders.filter(created_at__date=datetime.now().date()).aggregate(
+            total=Sum('total'))['total'] or 0
+        today_sales = float(today_sales) if today_sales else 0
+        
+        month_sales = kitchen_orders.filter(
+            created_at__month=datetime.now().month,
+            created_at__year=datetime.now().year
+        ).aggregate(total=Sum('total'))['total'] or 0
+        month_sales = float(month_sales) if month_sales else 0
+        
+        year_sales = kitchen_orders.filter(
+            created_at__year=datetime.now().year
+        ).aggregate(total=Sum('total'))['total'] or 0
+        year_sales = float(year_sales) if year_sales else 0
+        
+        # Calculate weekly data
+        weekly_data = []
+        for i in range(7):
+            day = datetime.now().date() - timedelta(days=6-i)
+            day_sales = kitchen_orders.filter(created_at__date=day).aggregate(
+                total=Sum('total'))['total'] or 0
+            weekly_data.append(float(day_sales) if day_sales else 0)
+        
+        # Get top items from kitchen orders
+        category_sales = KitchenOrderItem.objects.filter(
+            order__user=user,
+            order__status__in=['served', 'completed', 'finalized']
+        ).values('name').annotate(
+            total_qty=Sum('quantity')
+        ).order_by('-total_qty')[:4]
+        
+        if category_sales:
+            category_data = [float(item['total_qty']) for item in category_sales]
+            category_labels = [item['name'] for item in category_sales]
+        else:
+            category_data = [0]
+            category_labels = ['No Orders']
+        
+        # Calculate profit (25% margin for restaurant)
+        today_profit = today_sales * 0.25
+        
+        print(f"Restaurant mode - Kitchen orders: {kitchen_orders.count()}, Today: {today_sales}, Profit: {today_profit}")
+        
+        return {
+            'metrics': {
+                'today_sales': int(today_sales),
+                'today_profit': int(today_profit),
+                'month_sales': int(month_sales),
+                'year_sales': int(year_sales)
+            },
+            'charts': {
+                'weekly_trend': {
+                    'data': [int(x) for x in weekly_data],
+                    'labels': ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+                },
+                'top_products': {
+                    'data': category_data,
+                    'labels': category_labels
+                }
+            }
+        }
+    else:
+        # Fallback to regular mode
+        sales = Sale.objects.filter(cashier=user, mode='regular')
     
-    # Filter by active economic year
-    if active_eco_year:
-        sales = sales.filter(economic_year=active_eco_year)
+    # Debug: Print total sales count
+    print(f"Total sales for user {user.id} in mode {mode}: {sales.count()}")
     
     # Calculate real sales data
     today_sales = sales.filter(created_at__date=datetime.now().date()).aggregate(
@@ -70,25 +137,24 @@ def generate_sales_data(user, mode):
         weekly_data.append(float(day_sales) if day_sales else 0)
     
     # Get category data from actual sales items
-    from billing.models import SaleItem
-    if mode == 'dealership':
+    if mode == 'kirana':
         category_sales = SaleItem.objects.filter(
             sale__cashier=user,
-            sale__mode='regular'
+            sale__mode='kirana'
         ).values('product_name').annotate(
             total_qty=Sum('quantity')
         ).order_by('-total_qty')[:4]
-    elif mode == 'restaurant':
+    elif mode == 'dealership':
         category_sales = SaleItem.objects.filter(
             sale__cashier=user,
-            sale__mode='regular'
+            sale__mode='dealership'
         ).values('product_name').annotate(
             total_qty=Sum('quantity')
         ).order_by('-total_qty')[:4]
     else:
         category_sales = SaleItem.objects.filter(
             sale__cashier=user,
-            sale__mode='kirana'
+            sale__mode='regular'
         ).values('product_name').annotate(
             total_qty=Sum('quantity')
         ).order_by('-total_qty')[:4]
@@ -100,11 +166,53 @@ def generate_sales_data(user, mode):
         category_data = [0]
         category_labels = ['No Sales']
     
-
+    # Calculate actual profit based on cost vs selling price
+    actual_profit = 0
+    from inventory.models import Purchase
+    
+    if mode == 'kirana':
+        today_sale_items = SaleItem.objects.filter(
+            sale__cashier=user,
+            sale__mode='kirana',
+            sale__created_at__date=datetime.now().date()
+        )
+    elif mode == 'dealership':
+        today_sale_items = SaleItem.objects.filter(
+            sale__cashier=user,
+            sale__mode='dealership',
+            sale__created_at__date=datetime.now().date()
+        )
+    else:
+        today_sale_items = SaleItem.objects.filter(
+            sale__cashier=user,
+            sale__mode='regular',
+            sale__created_at__date=datetime.now().date()
+        )
+    
+    for item in today_sale_items:
+        # Get cost price from purchases
+        purchase = Purchase.objects.filter(
+            product_name=item.product_name,
+            user=user
+        ).order_by('-created_at').first()
+        
+        if purchase:
+            cost_price = float(purchase.unit_price)
+            selling_price = float(item.unit_price)
+            quantity = float(item.quantity)
+            
+            item_profit = (selling_price - cost_price) * quantity
+            actual_profit += max(0, item_profit)  # Only positive profit
+    
+    # Debug: Print final metrics
+    print(f"Final metrics for {mode} - Today: {today_sales}, Profit: {actual_profit}, Month: {month_sales}, Year: {year_sales}")
+    print(f"Weekly data: {weekly_data}")
+    print(f"Category data: {category_data}")
     
     return {
         'metrics': {
             'today_sales': int(today_sales),
+            'today_profit': int(actual_profit),
             'month_sales': int(month_sales),
             'year_sales': int(year_sales)
         },
@@ -123,15 +231,11 @@ def generate_sales_data(user, mode):
 def generate_inventory_data(user, mode):
     from authentication.models import EconomicYear
     
-    # Get active economic year
-    active_eco_year = EconomicYear.objects.filter(user=user, is_active=True).first()
-    
-    # Get actual inventory data filtered by mode
+    # Get actual inventory data filtered by mode (remove economic year filtering)
     products = Stock.objects.filter(user=user, mode=mode)
     
-    # Filter by active economic year
-    if active_eco_year:
-        products = products.filter(economic_year=active_eco_year)
+    # Debug: Print inventory count
+    print(f"Total inventory items for user {user.id} in mode {mode}: {products.count()}")
     total_items = products.count()
     low_stock = products.filter(current_stock__lt=10).count()
     out_of_stock = products.filter(current_stock=0).count()
@@ -160,8 +264,6 @@ def generate_inventory_data(user, mode):
             mode=mode,
             purchase_date=day
         )
-        if active_eco_year:
-            purchases_query = purchases_query.filter(economic_year=active_eco_year)
         
         day_purchases = purchases_query.aggregate(total=Sum('quantity'))['total'] or 0
         weekly_movement.append(int(day_purchases))
@@ -195,12 +297,10 @@ def generate_financial_data(user, mode):
     active_eco_year = EconomicYear.objects.filter(user=user, is_active=True).first()
     
     # Get sales data filtered by mode
-    if mode == 'dealership':
-        sales = Sale.objects.filter(cashier=user, mode='regular')
-    elif mode == 'restaurant':
-        sales = Sale.objects.filter(cashier=user, mode='regular')
-    else:
+    if mode == 'kirana':
         sales = Sale.objects.filter(cashier=user, mode='kirana')
+    else:  # restaurant and dealership use 'regular' mode
+        sales = Sale.objects.filter(cashier=user, mode='regular')
     
     # Filter by active economic year
     if active_eco_year:
@@ -421,20 +521,15 @@ def generate_trends_data(user, mode):
     from billing.models import SaleItem
     
     # Get real sales data for trends
-    if mode == 'dealership':
-        sale_items = SaleItem.objects.filter(
-            sale__cashier=user,
-            sale__mode='regular'
-        )
-    elif mode == 'restaurant':
-        sale_items = SaleItem.objects.filter(
-            sale__cashier=user,
-            sale__mode='regular'
-        )
-    else:
+    if mode == 'kirana':
         sale_items = SaleItem.objects.filter(
             sale__cashier=user,
             sale__mode='kirana'
+        )
+    else:  # restaurant and dealership use 'regular' mode
+        sale_items = SaleItem.objects.filter(
+            sale__cashier=user,
+            sale__mode='regular'
         )
     
     # Get top selling products (only if data exists)
@@ -451,23 +546,17 @@ def generate_trends_data(user, mode):
             month += 12
             year -= 1
         
-        if mode == 'dealership':
-            month_sales = sale_items.filter(
-                sale__created_at__month=month,
-                sale__created_at__year=year,
-                sale__mode='regular'
-            ).aggregate(total=Sum('quantity'))['total'] or 0
-        elif mode == 'restaurant':
-            month_sales = sale_items.filter(
-                sale__created_at__month=month,
-                sale__created_at__year=year,
-                sale__mode='regular'
-            ).aggregate(total=Sum('quantity'))['total'] or 0
-        else:
+        if mode == 'kirana':
             month_sales = sale_items.filter(
                 sale__created_at__month=month,
                 sale__created_at__year=year,
                 sale__mode='kirana'
+            ).aggregate(total=Sum('quantity'))['total'] or 0
+        else:  # restaurant and dealership use 'regular' mode
+            month_sales = sale_items.filter(
+                sale__created_at__month=month,
+                sale__created_at__year=year,
+                sale__mode='regular'
             ).aggregate(total=Sum('quantity'))['total'] or 0
         monthly_trends.append(int(month_sales))
     
