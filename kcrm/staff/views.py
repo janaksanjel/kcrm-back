@@ -512,3 +512,43 @@ def individual_permissions_detail(request, user_id):
             'success': False,
             'message': f'Error: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def role_users(request, role_id):
+    """Get all users assigned to a specific role"""
+    try:
+        active_year = EconomicYear.objects.get(user=request.user, is_active=True)
+        role = Role.objects.get(id=role_id, user=request.user, economic_year=active_year)
+        
+        # Get staff members with this role
+        staff_members = Staff.objects.filter(
+            role=role,
+            created_by=request.user,
+            economic_year=active_year,
+            status='active'
+        ).select_related('user')
+        
+        users_data = []
+        for staff in staff_members:
+            users_data.append({
+                'id': staff.id,
+                'name': staff.name,
+                'email': staff.email,
+                'role_name': role.name
+            })
+        
+        return Response({
+            'success': True,
+            'users': users_data
+        })
+    except EconomicYear.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'No active economic year found'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    except Role.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'Role not found'
+        }, status=status.HTTP_404_NOT_FOUND)
