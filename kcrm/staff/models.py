@@ -52,6 +52,7 @@ class Staff(models.Model):
     economic_year = models.ForeignKey(EconomicYear, on_delete=models.CASCADE)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='active')
     auto_password = models.CharField(max_length=20, blank=True)
+    individual_permissions = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -80,3 +81,24 @@ class UserRole(models.Model):
     
     def __str__(self):
         return f"{self.user.username} - {self.role.name}"
+
+class IndividualUserPermission(models.Model):
+    MODE_CHOICES = [
+        ('kirana', 'Kirana'),
+        ('restaurant', 'Restaurant'),
+        ('dealership', 'Dealership'),
+    ]
+    
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='individual_permissions')
+    mode = models.CharField(max_length=20, choices=MODE_CHOICES, default='kirana')
+    economic_year = models.ForeignKey(EconomicYear, on_delete=models.CASCADE)
+    permissions = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ['user', 'mode', 'economic_year']
+        db_table = 'individual_user_permissions'
+    
+    def __str__(self):
+        return f"{self.user.username} - {self.mode}"

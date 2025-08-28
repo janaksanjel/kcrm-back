@@ -13,4 +13,7 @@ urlpatterns = [
     path('staff/', views.staff_list, name='staff_list'),
     path('staff/<int:staff_id>/', views.staff_detail, name='staff_detail'),
     path('staff/<int:staff_id>/update-password/', views.update_staff_password, name='update_staff_password'),
+    
+    # Individual permissions
+    path('individual-permissions/<int:user_id>/', views.individual_permissions_detail, name='individual_permissions_detail'),
 ]

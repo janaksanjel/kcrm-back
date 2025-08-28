@@ -3,7 +3,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.db import transaction
-from .models import Role, UserRole, Staff
+from .models import Role, UserRole, Staff, IndividualUserPermission
 from .serializers import RoleSerializer, UserRoleSerializer, StaffSerializer
 from authentication.models import EconomicYear
 
@@ -472,3 +472,43 @@ def update_staff_password(request, staff_id):
             'success': False,
             'message': 'Staff member not found'
         }, status=status.HTTP_404_NOT_FOUND)
+
+# Individual Permissions Management
+@api_view(['GET', 'PUT'])
+@permission_classes([IsAuthenticated])
+def individual_permissions_detail(request, user_id):
+    try:
+        active_year = EconomicYear.objects.get(user=request.user, is_active=True)
+        staff = Staff.objects.get(user_id=user_id, created_by=request.user, economic_year=active_year)
+        
+        if request.method == 'GET':
+            return Response({
+                'success': True,
+                'permissions': staff.individual_permissions or {}
+            })
+        
+        elif request.method == 'PUT':
+            permissions = request.data.get('permissions', {})
+            staff.individual_permissions = permissions
+            staff.save()
+            
+            return Response({
+                'success': True,
+                'message': 'Individual permissions updated successfully'
+            })
+    
+    except EconomicYear.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'No active economic year found'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    except Staff.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'Staff member not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

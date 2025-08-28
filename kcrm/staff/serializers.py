@@ -34,7 +34,7 @@ class StaffSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Staff
-        fields = ['id', 'name', 'email', 'phone', 'role', 'role_name', 'username', 'password', 'status', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'email', 'phone', 'role', 'role_name', 'username', 'password', 'status', 'individual_permissions', 'created_at', 'updated_at']
         read_only_fields = ['created_by', 'economic_year', 'user', 'auto_password', 'created_at', 'updated_at']
     
     def get_role_name(self, obj):
