@@ -3,8 +3,8 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.db import transaction
-from .models import Role, UserRole
-from .serializers import RoleSerializer, UserRoleSerializer
+from .models import Role, UserRole, Staff
+from .serializers import RoleSerializer, UserRoleSerializer, StaffSerializer
 from authentication.models import EconomicYear
 
 @api_view(['GET', 'POST'])
@@ -314,3 +314,161 @@ def user_roles(request, user_id):
             'success': False,
             'message': 'No active economic year found'
         }, status=status.HTTP_400_BAD_REQUEST)
+
+# Staff Management
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def staff_list(request):
+    if request.method == 'GET':
+        try:
+            active_year = EconomicYear.objects.get(user=request.user, is_active=True)
+            mode = request.GET.get('mode', 'kirana')
+            
+            staff = Staff.objects.filter(
+                created_by=request.user,
+                economic_year=active_year,
+                mode=mode
+            ).order_by('-created_at')
+            
+            staff_data = []
+            for s in staff:
+                data = StaffSerializer(s).data
+                data['password'] = s.auto_password
+                staff_data.append(data)
+            
+            return Response({
+                'success': True,
+                'staff': staff_data
+            })
+        except EconomicYear.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'No active economic year found'
+            }, status=status.HTTP_400_BAD_REQUEST)
+    
+    elif request.method == 'POST':
+        serializer = StaffSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            try:
+                staff = serializer.save()
+                # Show password in response for first time
+                serializer._password_shown = True
+                response_data = serializer.to_representation(staff)
+                response_data['password'] = staff.auto_password
+                
+                return Response({
+                    'success': True,
+                    'message': 'Staff member added successfully',
+                    'staff': response_data
+                }, status=status.HTTP_201_CREATED)
+            except Exception as e:
+                if 'UNIQUE constraint failed' in str(e) or 'email' in str(e).lower():
+                    return Response({
+                        'success': False,
+                        'message': 'Email already in use'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                return Response({
+                    'success': False,
+                    'message': str(e)
+                }, status=status.HTTP_400_BAD_REQUEST)
+        return Response({
+            'success': False,
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def staff_detail(request, staff_id):
+    try:
+        active_year = EconomicYear.objects.get(user=request.user, is_active=True)
+        staff = Staff.objects.get(
+            id=staff_id,
+            created_by=request.user,
+            economic_year=active_year
+        )
+        
+        if request.method == 'GET':
+            serializer = StaffSerializer(staff)
+            return Response({
+                'success': True,
+                'staff': serializer.data
+            })
+        
+        elif request.method == 'PUT':
+            serializer = StaffSerializer(staff, data=request.data, partial=True, context={'request': request})
+            if serializer.is_valid():
+                serializer.save()
+                return Response({
+                    'success': True,
+                    'message': 'Staff member updated successfully',
+                    'staff': serializer.data
+                })
+            return Response({
+                'success': False,
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        elif request.method == 'DELETE':
+            # Actually delete the staff member
+            if staff.user:
+                staff.user.delete()
+            staff.delete()
+            
+            return Response({
+                'success': True,
+                'message': 'Staff member deleted successfully'
+            })
+    
+    except EconomicYear.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'No active economic year found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Staff.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'Staff member not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def update_staff_password(request, staff_id):
+    try:
+        active_year = EconomicYear.objects.get(user=request.user, is_active=True)
+        staff = Staff.objects.get(
+            id=staff_id,
+            created_by=request.user,
+            economic_year=active_year
+        )
+        
+        new_password = request.data.get('password')
+        if not new_password:
+            return Response({
+                'success': False,
+                'message': 'Password is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Update staff password
+        staff.auto_password = new_password
+        staff.save()
+        
+        # Update user password
+        if staff.user:
+            staff.user.set_password(new_password)
+            staff.user.save()
+        
+        return Response({
+            'success': True,
+            'message': 'Password updated successfully'
+        })
+    
+    except EconomicYear.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'No active economic year found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Staff.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'Staff member not found'
+        }, status=status.HTTP_404_NOT_FOUND)

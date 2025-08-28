@@ -6,6 +6,7 @@ class User(AbstractUser):
         ('shop_owner', 'Shop Owner'),
         ('super_admin', 'Super Admin'),
         ('kitchen_user', 'Kitchen User'),
+        ('staff', 'Staff'),
     ]
     
     phone = models.CharField(max_length=15, blank=True, null=True)
