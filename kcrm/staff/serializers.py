@@ -48,6 +48,9 @@ class StaffSerializer(serializers.ModelSerializer):
         except EconomicYear.DoesNotExist:
             raise serializers.ValidationError("No active economic year found")
         
+        # Get mode from request
+        mode = request.GET.get('mode', 'kirana')
+        
         # Generate username from email
         email = validated_data['email']
         username = email.split('@')[0]
@@ -78,6 +81,7 @@ class StaffSerializer(serializers.ModelSerializer):
         validated_data['user'] = user
         validated_data['created_by'] = request.user
         validated_data['economic_year'] = active_year
+        validated_data['mode'] = mode
         validated_data['auto_password'] = password
         
         staff = Staff.objects.create(**validated_data)
