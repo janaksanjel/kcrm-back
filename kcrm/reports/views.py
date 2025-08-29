@@ -13,35 +13,50 @@ import random
 def get_reports(request):
     report_type = request.GET.get('type', 'sales')
     mode = request.GET.get('mode', 'kirana')
+    eco_year_id = request.GET.get('eco_year_id')
     
     if report_type == 'sales':
-        return Response(generate_sales_data(request.user, mode))
+        return Response(generate_sales_data(request.user, mode, eco_year_id))
     elif report_type == 'inventory':
-        return Response(generate_inventory_data(request.user, mode))
+        return Response(generate_inventory_data(request.user, mode, eco_year_id))
     elif report_type == 'financial':
-        return Response(generate_financial_data(request.user, mode))
+        return Response(generate_financial_data(request.user, mode, eco_year_id))
     elif report_type == 'customer':
-        return Response(generate_customer_data(request.user, mode))
+        return Response(generate_customer_data(request.user, mode, eco_year_id))
     elif report_type == 'performance':
-        return Response(generate_performance_data(request.user, mode))
+        return Response(generate_performance_data(request.user, mode, eco_year_id))
     
     return Response({'error': 'Invalid report type'}, status=400)
 
-def generate_sales_data(user, mode):
+def generate_sales_data(user, mode, eco_year_id=None):
     from authentication.models import EconomicYear
     from billing.models import SaleItem, KitchenOrder, KitchenOrderItem
+    
+    # Get economic year for filtering
+    eco_year = None
+    if eco_year_id:
+        try:
+            eco_year = EconomicYear.objects.get(id=eco_year_id, user=user)
+        except EconomicYear.DoesNotExist:
+            pass
     
     # Filter sales by actual mode from database
     if mode == 'kirana':
         sales = Sale.objects.filter(cashier=user, mode='kirana')
+        if eco_year:
+            sales = sales.filter(economic_year=eco_year)
     elif mode == 'dealership':
         sales = Sale.objects.filter(cashier=user, mode='dealership')
+        if eco_year:
+            sales = sales.filter(economic_year=eco_year)
     elif mode == 'restaurant':
         # Restaurant uses kitchen orders, not regular sales
         kitchen_orders = KitchenOrder.objects.filter(
             user=user,
             status__in=['served', 'completed', 'finalized']
         )
+        if eco_year:
+            kitchen_orders = kitchen_orders.filter(economic_year=eco_year)
         
         # Calculate metrics from kitchen orders
         today_sales = kitchen_orders.filter(created_at__date=datetime.now().date()).aggregate(
@@ -71,7 +86,10 @@ def generate_sales_data(user, mode):
         category_sales = KitchenOrderItem.objects.filter(
             order__user=user,
             order__status__in=['served', 'completed', 'finalized']
-        ).values('name').annotate(
+        )
+        if eco_year:
+            category_sales = category_sales.filter(order__economic_year=eco_year)
+        category_sales = category_sales.values('name').annotate(
             total_qty=Sum('quantity')
         ).order_by('-total_qty')[:4]
         
@@ -108,6 +126,8 @@ def generate_sales_data(user, mode):
     else:
         # Fallback to regular mode
         sales = Sale.objects.filter(cashier=user, mode='regular')
+        if eco_year:
+            sales = sales.filter(economic_year=eco_year)
     
     # Debug: Print total sales count
     print(f"Total sales for user {user.id} in mode {mode}: {sales.count()}")
@@ -141,21 +161,30 @@ def generate_sales_data(user, mode):
         category_sales = SaleItem.objects.filter(
             sale__cashier=user,
             sale__mode='kirana'
-        ).values('product_name').annotate(
+        )
+        if eco_year:
+            category_sales = category_sales.filter(sale__economic_year=eco_year)
+        category_sales = category_sales.values('product_name').annotate(
             total_qty=Sum('quantity')
         ).order_by('-total_qty')[:4]
     elif mode == 'dealership':
         category_sales = SaleItem.objects.filter(
             sale__cashier=user,
             sale__mode='dealership'
-        ).values('product_name').annotate(
+        )
+        if eco_year:
+            category_sales = category_sales.filter(sale__economic_year=eco_year)
+        category_sales = category_sales.values('product_name').annotate(
             total_qty=Sum('quantity')
         ).order_by('-total_qty')[:4]
     else:
         category_sales = SaleItem.objects.filter(
             sale__cashier=user,
             sale__mode='regular'
-        ).values('product_name').annotate(
+        )
+        if eco_year:
+            category_sales = category_sales.filter(sale__economic_year=eco_year)
+        category_sales = category_sales.values('product_name').annotate(
             total_qty=Sum('quantity')
         ).order_by('-total_qty')[:4]
     
@@ -176,18 +205,24 @@ def generate_sales_data(user, mode):
             sale__mode='kirana',
             sale__created_at__date=datetime.now().date()
         )
+        if eco_year:
+            today_sale_items = today_sale_items.filter(sale__economic_year=eco_year)
     elif mode == 'dealership':
         today_sale_items = SaleItem.objects.filter(
             sale__cashier=user,
             sale__mode='dealership',
             sale__created_at__date=datetime.now().date()
         )
+        if eco_year:
+            today_sale_items = today_sale_items.filter(sale__economic_year=eco_year)
     else:
         today_sale_items = SaleItem.objects.filter(
             sale__cashier=user,
             sale__mode='regular',
             sale__created_at__date=datetime.now().date()
         )
+        if eco_year:
+            today_sale_items = today_sale_items.filter(sale__economic_year=eco_year)
     
     for item in today_sale_items:
         # Get cost price from purchases
@@ -228,11 +263,21 @@ def generate_sales_data(user, mode):
         }
     }
 
-def generate_inventory_data(user, mode):
+def generate_inventory_data(user, mode, eco_year_id=None):
     from authentication.models import EconomicYear
     
-    # Get actual inventory data filtered by mode (remove economic year filtering)
+    # Get economic year for filtering
+    eco_year = None
+    if eco_year_id:
+        try:
+            eco_year = EconomicYear.objects.get(id=eco_year_id, user=user)
+        except EconomicYear.DoesNotExist:
+            pass
+    
+    # Get actual inventory data filtered by mode and economic year
     products = Stock.objects.filter(user=user, mode=mode)
+    if eco_year:
+        products = products.filter(economic_year=eco_year)
     
     # Debug: Print inventory count
     print(f"Total inventory items for user {user.id} in mode {mode}: {products.count()}")
@@ -264,6 +309,8 @@ def generate_inventory_data(user, mode):
             mode=mode,
             purchase_date=day
         )
+        if eco_year:
+            purchases_query = purchases_query.filter(economic_year=eco_year)
         
         day_purchases = purchases_query.aggregate(total=Sum('quantity'))['total'] or 0
         weekly_movement.append(int(day_purchases))
@@ -289,12 +336,21 @@ def generate_inventory_data(user, mode):
         }
     }
 
-def generate_financial_data(user, mode):
+def generate_financial_data(user, mode, eco_year_id=None):
     from decimal import Decimal
     from authentication.models import EconomicYear
     
-    # Get active economic year
-    active_eco_year = EconomicYear.objects.filter(user=user, is_active=True).first()
+    # Get economic year for filtering
+    eco_year = None
+    if eco_year_id:
+        try:
+            eco_year = EconomicYear.objects.get(id=eco_year_id, user=user)
+        except EconomicYear.DoesNotExist:
+            pass
+    
+    if not eco_year:
+        # Fallback to active economic year
+        eco_year = EconomicYear.objects.filter(user=user, is_active=True).first()
     
     # Get sales data filtered by mode
     if mode == 'kirana':
@@ -302,9 +358,9 @@ def generate_financial_data(user, mode):
     else:  # restaurant and dealership use 'regular' mode
         sales = Sale.objects.filter(cashier=user, mode='regular')
     
-    # Filter by active economic year
-    if active_eco_year:
-        sales = sales.filter(economic_year=active_eco_year)
+    # Filter by economic year
+    if eco_year:
+        sales = sales.filter(economic_year=eco_year)
     revenue = sales.aggregate(total=Sum('total'))['total'] or Decimal('0')
     revenue = float(revenue) if revenue else 0
     
@@ -366,19 +422,28 @@ def generate_financial_data(user, mode):
         }
     }
 
-def generate_customer_data(user, mode):
+def generate_customer_data(user, mode, eco_year_id=None):
     from billing.models import Customer
     from authentication.models import EconomicYear
     
-    # Get active economic year
-    active_eco_year = EconomicYear.objects.filter(user=user, is_active=True).first()
+    # Get economic year for filtering
+    eco_year = None
+    if eco_year_id:
+        try:
+            eco_year = EconomicYear.objects.get(id=eco_year_id, user=user)
+        except EconomicYear.DoesNotExist:
+            pass
+    
+    if not eco_year:
+        # Fallback to active economic year
+        eco_year = EconomicYear.objects.filter(user=user, is_active=True).first()
     
     # Get real customer data filtered by mode
     customers = Customer.objects.filter(user=user, mode=mode)
     
-    # Filter by active economic year
-    if active_eco_year:
-        customers = customers.filter(economic_year=active_eco_year)
+    # Filter by economic year
+    if eco_year:
+        customers = customers.filter(economic_year=eco_year)
     total_customers = customers.count()
     
     # New customers this month
@@ -439,18 +504,27 @@ def generate_customer_data(user, mode):
         }
     }
 
-def generate_performance_data(user, mode):
+def generate_performance_data(user, mode, eco_year_id=None):
     from authentication.models import EconomicYear
     
-    # Get active economic year
-    active_eco_year = EconomicYear.objects.filter(user=user, is_active=True).first()
+    # Get economic year for filtering
+    eco_year = None
+    if eco_year_id:
+        try:
+            eco_year = EconomicYear.objects.get(id=eco_year_id, user=user)
+        except EconomicYear.DoesNotExist:
+            pass
+    
+    if not eco_year:
+        # Fallback to active economic year
+        eco_year = EconomicYear.objects.filter(user=user, is_active=True).first()
     
     # Get sales data
     sales = Sale.objects.filter(cashier=user)
     
-    # Filter by active economic year
-    if active_eco_year:
-        sales = sales.filter(economic_year=active_eco_year)
+    # Filter by economic year
+    if eco_year:
+        sales = sales.filter(economic_year=eco_year)
     
     # Mode-specific performance data
     performance_data = {
@@ -517,8 +591,17 @@ def generate_performance_data(user, mode):
         }
     }
 
-def generate_trends_data(user, mode):
+def generate_trends_data(user, mode, eco_year_id=None):
     from billing.models import SaleItem
+    from authentication.models import EconomicYear
+    
+    # Get economic year for filtering
+    eco_year = None
+    if eco_year_id:
+        try:
+            eco_year = EconomicYear.objects.get(id=eco_year_id, user=user)
+        except EconomicYear.DoesNotExist:
+            pass
     
     # Get real sales data for trends
     if mode == 'kirana':
@@ -526,11 +609,15 @@ def generate_trends_data(user, mode):
             sale__cashier=user,
             sale__mode='kirana'
         )
+        if eco_year:
+            sale_items = sale_items.filter(sale__economic_year=eco_year)
     else:  # restaurant and dealership use 'regular' mode
         sale_items = SaleItem.objects.filter(
             sale__cashier=user,
             sale__mode='regular'
         )
+        if eco_year:
+            sale_items = sale_items.filter(sale__economic_year=eco_year)
     
     # Get top selling products (only if data exists)
     popular_items = sale_items.values('product_name').annotate(
@@ -547,17 +634,23 @@ def generate_trends_data(user, mode):
             year -= 1
         
         if mode == 'kirana':
-            month_sales = sale_items.filter(
+            month_items = sale_items.filter(
                 sale__created_at__month=month,
                 sale__created_at__year=year,
                 sale__mode='kirana'
-            ).aggregate(total=Sum('quantity'))['total'] or 0
+            )
+            if eco_year:
+                month_items = month_items.filter(sale__economic_year=eco_year)
+            month_sales = month_items.aggregate(total=Sum('quantity'))['total'] or 0
         else:  # restaurant and dealership use 'regular' mode
-            month_sales = sale_items.filter(
+            month_items = sale_items.filter(
                 sale__created_at__month=month,
                 sale__created_at__year=year,
                 sale__mode='regular'
-            ).aggregate(total=Sum('quantity'))['total'] or 0
+            )
+            if eco_year:
+                month_items = month_items.filter(sale__economic_year=eco_year)
+            month_sales = month_items.aggregate(total=Sum('quantity'))['total'] or 0
         monthly_trends.append(int(month_sales))
     
     # Only return data if we have real sales data

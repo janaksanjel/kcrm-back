@@ -42,6 +42,8 @@ class Sale(models.Model):
     MODE_CHOICES = [
         ('regular', 'Regular'),
         ('kirana', 'Kirana'),
+        ('restaurant', 'Restaurant'),
+        ('dealership', 'Dealership'),
     ]
     
     sale_number = models.CharField(max_length=50, unique=True)
