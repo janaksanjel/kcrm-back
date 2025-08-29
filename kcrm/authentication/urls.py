@@ -28,4 +28,6 @@ urlpatterns = [
     path('kitchen-users/create/', views.create_kitchen_user, name='create_kitchen_user'),
     path('kitchen-users/', views.get_kitchen_users, name='get_kitchen_users'),
     path('kitchen-users/<int:user_id>/delete/', views.delete_kitchen_user, name='delete_kitchen_user'),
+    path('kitchen-users/<int:user_id>/credentials/', views.get_kitchen_user_credentials, name='get_kitchen_user_credentials'),
+    path('kitchen-users/<int:user_id>/password/', views.update_kitchen_user_password, name='update_kitchen_user_password'),
 ]

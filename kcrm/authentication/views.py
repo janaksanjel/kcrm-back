@@ -562,3 +562,63 @@ def delete_kitchen_user(request, user_id):
             'success': False,
             'message': 'Kitchen user not found'
         }, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_kitchen_user_credentials(request, user_id):
+    # Only shop owners can view kitchen user credentials
+    if request.user.role != 'shop_owner':
+        return Response({
+            'success': False,
+            'message': 'Only shop owners can view kitchen user credentials'
+        }, status=status.HTTP_403_FORBIDDEN)
+    
+    try:
+        user = User.objects.get(id=user_id, role='kitchen_user', restaurant_id=request.user.id)
+        return Response({
+            'success': True,
+            'data': {
+                'username': user.username,
+                'password': user.unhashed_password if hasattr(user, 'unhashed_password') else 'Password not available'
+            }
+        })
+    except User.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'Kitchen user not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def update_kitchen_user_password(request, user_id):
+    # Only shop owners can update kitchen user passwords
+    if request.user.role != 'shop_owner':
+        return Response({
+            'success': False,
+            'message': 'Only shop owners can update kitchen user passwords'
+        }, status=status.HTTP_403_FORBIDDEN)
+    
+    try:
+        user = User.objects.get(id=user_id, role='kitchen_user', restaurant_id=request.user.id)
+        new_password = request.data.get('password')
+        
+        if not new_password:
+            return Response({
+                'success': False,
+                'message': 'Password is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        user.set_password(new_password)
+        if hasattr(user, 'unhashed_password'):
+            user.unhashed_password = new_password
+        user.save()
+        
+        return Response({
+            'success': True,
+            'message': 'Password updated successfully'
+        })
+    except User.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'Kitchen user not found'
+        }, status=status.HTTP_404_NOT_FOUND)

@@ -14,6 +14,7 @@ class User(AbstractUser):
     shop_name = models.CharField(max_length=100, blank=True, null=True)
     restaurant_id = models.IntegerField(blank=True, null=True)
     is_verified = models.BooleanField(default=False)
+    unhashed_password = models.CharField(max_length=128, blank=True, null=True)  # Store unhashed password for kitchen users
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

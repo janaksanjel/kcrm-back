@@ -95,6 +95,9 @@ class KitchenUserRegistrationSerializer(serializers.ModelSerializer):
             role='kitchen_user',
             restaurant_id=restaurant_id
         )
+        # Store unhashed password for kitchen users
+        user.unhashed_password = validated_data['password']
+        user.save()
         return user
 
 class UserLoginSerializer(serializers.Serializer):
