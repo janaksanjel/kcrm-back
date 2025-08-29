@@ -12,6 +12,7 @@ urlpatterns = [
     # Settings endpoints
     path('settings/profile/', views.update_profile, name='update_profile'),
     path('settings/password/', views.change_password, name='change_password'),
+    path('settings/password/view/', views.view_password, name='view_password'),
     path('settings/sessions/', views.get_sessions, name='get_sessions'),
     path('settings/sessions/<int:session_id>/', views.terminate_session, name='terminate_session'),
     path('settings/sessions/terminate-all/', views.terminate_all_sessions, name='terminate_all_sessions'),

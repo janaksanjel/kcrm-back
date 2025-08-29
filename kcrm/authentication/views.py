@@ -247,7 +247,6 @@ def profile(request):
         'user': user_data
     }, status=status.HTTP_200_OK)
 
-# Settings APIs
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 def update_profile(request):
@@ -267,7 +266,12 @@ def update_profile(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def change_password(request):
+    print(f"Password change request data: {request.data}")
+    print(f"User: {request.user}")
+    
     serializer = PasswordChangeSerializer(data=request.data, context={'request': request})
+    print(f"Serializer is valid: {serializer.is_valid()}")
+    
     if serializer.is_valid():
         user = request.user
         user.set_password(serializer.validated_data['new_password'])
@@ -280,10 +284,21 @@ def change_password(request):
             'success': True,
             'message': 'Password changed successfully'
         })
+    
+    print(f"Serializer errors: {serializer.errors}")
     return Response({
         'success': False,
         'errors': serializer.errors
     }, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def view_password(request):
+    # For security reasons, we don't actually return the password
+    return Response({
+        'success': True,
+        'message': 'Password viewing is not allowed for security reasons'
+    })
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
