@@ -49,6 +49,11 @@ class Staff(models.Model):
 
     def __str__(self):
         return f"{self.user.get_full_name()} - {self.role.name if self.role else 'No Role'}"
+    
+    def delete(self, *args, **kwargs):
+        user = self.user
+        super().delete(*args, **kwargs)
+        user.delete()
 
 class Permission(models.Model):
     staff = models.OneToOneField(Staff, on_delete=models.CASCADE, related_name='permissions')
