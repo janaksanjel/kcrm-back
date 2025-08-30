@@ -13,7 +13,12 @@ def roles(request):
     if request.method == 'GET':
         try:
             active_year = EconomicYear.objects.get(user=request.user, is_active=True)
-            mode = request.GET.get('mode', 'kirana')
+            mode = request.GET.get('mode')
+            if not mode:
+                return Response({
+                    'success': False,
+                    'message': 'Mode parameter is required'
+                }, status=status.HTTP_400_BAD_REQUEST)
             
             roles = Role.objects.filter(
                 user=request.user,
@@ -34,7 +39,13 @@ def roles(request):
             }, status=status.HTTP_400_BAD_REQUEST)
     
     elif request.method == 'POST':
-        serializer = RoleSerializer(data=request.data, context={'request': request})
+        mode = request.GET.get('mode')
+        if not mode:
+            return Response({
+                'success': False,
+                'message': 'Mode parameter is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        serializer = RoleSerializer(data=request.data, context={'request': request, 'mode': mode})
         if serializer.is_valid():
             role = serializer.save()
             return Response({
@@ -62,7 +73,13 @@ def manage_role(request, role_id):
             })
         
         elif request.method == 'PUT':
-            serializer = RoleSerializer(role, data=request.data, partial=True, context={'request': request})
+            mode = request.GET.get('mode')
+            if not mode:
+                return Response({
+                    'success': False,
+                    'message': 'Mode parameter is required'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            serializer = RoleSerializer(role, data=request.data, partial=True, context={'request': request, 'mode': mode})
             if serializer.is_valid():
                 role = serializer.save()
                 return Response({
@@ -97,7 +114,12 @@ def manage_role(request, role_id):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def permissions(request):
-    mode = request.GET.get('mode', 'kirana')
+    mode = request.GET.get('mode')
+    if not mode:
+        return Response({
+            'success': False,
+            'message': 'Mode parameter is required'
+        }, status=status.HTTP_400_BAD_REQUEST)
     
     # Define permission structure for each mode
     permission_structure = {
@@ -322,7 +344,12 @@ def staff_list(request):
     if request.method == 'GET':
         try:
             active_year = EconomicYear.objects.get(user=request.user, is_active=True)
-            mode = request.GET.get('mode', 'kirana')
+            mode = request.GET.get('mode')
+            if not mode:
+                return Response({
+                    'success': False,
+                    'message': 'Mode parameter is required'
+                }, status=status.HTTP_400_BAD_REQUEST)
             
             staff = Staff.objects.filter(
                 created_by=request.user,
@@ -347,7 +374,13 @@ def staff_list(request):
             }, status=status.HTTP_400_BAD_REQUEST)
     
     elif request.method == 'POST':
-        serializer = StaffSerializer(data=request.data, context={'request': request})
+        mode = request.GET.get('mode')
+        if not mode:
+            return Response({
+                'success': False,
+                'message': 'Mode parameter is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        serializer = StaffSerializer(data=request.data, context={'request': request, 'mode': mode})
         if serializer.is_valid():
             try:
                 staff = serializer.save()
@@ -371,6 +404,7 @@ def staff_list(request):
                     'success': False,
                     'message': str(e)
                 }, status=status.HTTP_400_BAD_REQUEST)
+        print(f"Serializer errors: {serializer.errors}")
         return Response({
             'success': False,
             'errors': serializer.errors
@@ -395,7 +429,13 @@ def staff_detail(request, staff_id):
             })
         
         elif request.method == 'PUT':
-            serializer = StaffSerializer(staff, data=request.data, partial=True, context={'request': request})
+            mode = request.GET.get('mode')
+            if not mode:
+                return Response({
+                    'success': False,
+                    'message': 'Mode parameter is required'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            serializer = StaffSerializer(staff, data=request.data, partial=True, context={'request': request, 'mode': mode})
             if serializer.is_valid():
                 serializer.save()
                 return Response({

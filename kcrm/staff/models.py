@@ -46,7 +46,7 @@ class Staff(models.Model):
     email = models.EmailField()
     phone = models.CharField(max_length=15)
     role = models.ForeignKey(Role, on_delete=models.CASCADE, null=True, blank=True)
-    mode = models.CharField(max_length=20, choices=MODE_CHOICES, default='kirana')
+    mode = models.CharField(max_length=20, choices=MODE_CHOICES)
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='staff_profile')
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='created_staff')
     economic_year = models.ForeignKey(EconomicYear, on_delete=models.CASCADE)
@@ -90,7 +90,7 @@ class IndividualUserPermission(models.Model):
     ]
     
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='individual_permissions')
-    mode = models.CharField(max_length=20, choices=MODE_CHOICES, default='kirana')
+    mode = models.CharField(max_length=20, choices=MODE_CHOICES)
     economic_year = models.ForeignKey(EconomicYear, on_delete=models.CASCADE)
     permissions = models.JSONField(default=dict)
     created_at = models.DateTimeField(auto_now_add=True)

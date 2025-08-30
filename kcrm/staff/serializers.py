@@ -22,6 +22,13 @@ class RoleSerializer(serializers.ModelSerializer):
         except EconomicYear.DoesNotExist:
             raise serializers.ValidationError("No active economic year found")
         
+        # Ensure mode is set from context if not provided in validated_data
+        if 'mode' not in validated_data:
+            mode = self.context.get('mode')
+            if not mode:
+                raise serializers.ValidationError("Mode parameter is required")
+            validated_data['mode'] = mode
+        
         validated_data['user'] = user
         validated_data['economic_year'] = active_year
         
@@ -48,8 +55,10 @@ class StaffSerializer(serializers.ModelSerializer):
         except EconomicYear.DoesNotExist:
             raise serializers.ValidationError("No active economic year found")
         
-        # Get mode from request
-        mode = request.GET.get('mode', 'kirana')
+        # Get mode from request - check both GET params and context
+        mode = request.GET.get('mode') or self.context.get('mode')
+        if not mode:
+            raise serializers.ValidationError("Mode parameter is required")
         
         # Generate username from store shortcode if available
         from authentication.models import StoreConfig
