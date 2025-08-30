@@ -49,3 +49,12 @@ class Staff(models.Model):
 
     def __str__(self):
         return f"{self.user.get_full_name()} - {self.role.name if self.role else 'No Role'}"
+
+class Permission(models.Model):
+    staff = models.OneToOneField(Staff, on_delete=models.CASCADE, related_name='permissions')
+    permissions_data = models.JSONField(default=dict)
+    created_date = models.DateTimeField(auto_now_add=True)
+    updated_date = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"Permissions for {self.staff.user.get_full_name()}"

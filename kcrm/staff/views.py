@@ -175,3 +175,47 @@ class StaffViewSet(viewsets.ModelViewSet):
             'is_active': staff.is_active,
             'message': f'Staff member {"activated" if staff.is_active else "deactivated"} successfully'
         })
+    
+    @action(detail=True, methods=['get'])
+    def get_staff_permissions(self, request, pk=None):
+        from .models import Permission
+        
+        staff = self.get_object()
+        if staff.shop_owner != request.user:
+            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+        
+        try:
+            permission = Permission.objects.get(staff=staff)
+            return Response({
+                'permissions': permission.permissions_data,
+                'mode': staff.mode
+            })
+        except Permission.DoesNotExist:
+            return Response({
+                'permissions': {},
+                'mode': staff.mode
+            })
+    
+    @action(detail=True, methods=['post'])
+    def update_permissions(self, request, pk=None):
+        from .models import Permission
+        
+        staff = self.get_object()
+        if staff.shop_owner != request.user:
+            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+        
+        permissions_data = request.data.get('permissions', {})
+        
+        permission, created = Permission.objects.get_or_create(
+            staff=staff,
+            defaults={'permissions_data': permissions_data}
+        )
+        
+        if not created:
+            permission.permissions_data = permissions_data
+            permission.save()
+        
+        return Response({
+            'success': True,
+            'message': 'Permissions updated successfully'
+        })
