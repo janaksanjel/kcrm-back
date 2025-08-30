@@ -45,8 +45,9 @@ class StaffSerializer(serializers.ModelSerializer):
         
         # Get store shortcode from request context
         request = self.context.get('request')
+        owner_user = self.context.get('owner_user', request.user if request else None)
         try:
-            store_config = StoreConfig.objects.get(user=request.user)
+            store_config = StoreConfig.objects.get(user=owner_user)
             store_shortcode = store_config.store_shortcode or 'shop'
         except (StoreConfig.DoesNotExist, AttributeError):
             store_shortcode = 'shop'
@@ -85,7 +86,7 @@ class StaffSerializer(serializers.ModelSerializer):
         )
         
         # Set restaurant_id to shop_owner's ID
-        validated_data['restaurant_id'] = request.user.id
+        validated_data['restaurant_id'] = owner_user.id
         
         # Create staff with the user
         staff = Staff.objects.create(user=user, **validated_data)

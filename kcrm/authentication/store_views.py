@@ -4,10 +4,20 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from .models import StoreConfig
 
+def get_owner_user(request):
+    """Helper function to get the owner user (shop owner for staff, or user itself)"""
+    try:
+        from staff.models import Staff
+        staff = Staff.objects.get(user=request.user)
+        return staff.shop_owner
+    except Staff.DoesNotExist:
+        return request.user
+
 @api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def store_config(request):
-    config, created = StoreConfig.objects.get_or_create(user=request.user)
+    owner_user = get_owner_user(request)
+    config, created = StoreConfig.objects.get_or_create(user=owner_user)
     
     if request.method == 'GET':
         return Response({
@@ -86,6 +96,7 @@ def store_config(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def check_availability(request):
+    owner_user = get_owner_user(request)
     value = request.data.get('value', '').strip()
     field_type = request.data.get('type', 'username')  # 'username' or 'url'
     
@@ -100,12 +111,12 @@ def check_availability(request):
     if field_type == 'url':
         exists = StoreConfig.objects.filter(
             store_url=value
-        ).exclude(user=request.user).exists()
+        ).exclude(user=owner_user).exists()
         message = 'URL available' if not exists else 'URL already taken'
     else:
         exists = StoreConfig.objects.filter(
             store_shortcode=value
-        ).exclude(user=request.user).exists()
+        ).exclude(user=owner_user).exists()
         message = 'Shortcode available' if not exists else 'Shortcode already taken'
     
     return Response({

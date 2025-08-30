@@ -1,12 +1,37 @@
 from rest_framework import serializers
 from .models import Customer, Sale, SaleItem, MenuCategory, MenuItem, MenuIngredient, KitchenOrder, KitchenOrderItem
 from inventory.models import Stock
+from staff.models import Staff
+
+def get_owner_user_from_context(context):
+    """Get the shop owner user for staff or return the user itself for shop owners"""
+    request = context.get('request')
+    if not request:
+        return None
+    
+    if request.user.role == 'staff':
+        try:
+            staff = Staff.objects.get(user=request.user)
+            return staff.shop_owner
+        except Staff.DoesNotExist:
+            return request.user
+    return request.user
 
 class CustomerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Customer
         fields = '__all__'
         read_only_fields = ('user', 'economic_year', 'created_at', 'updated_at')
+    
+    def create(self, validated_data):
+        owner_user = get_owner_user_from_context(self.context)
+        if owner_user:
+            from authentication.models import EconomicYear
+            active_year = EconomicYear.objects.filter(user=owner_user, is_active=True).first()
+            if active_year:
+                validated_data['user'] = owner_user
+                validated_data['economic_year'] = active_year
+        return super().create(validated_data)
 
 class SaleItemSerializer(serializers.ModelSerializer):
     class Meta:
@@ -48,6 +73,16 @@ class MenuCategorySerializer(serializers.ModelSerializer):
         model = MenuCategory
         fields = '__all__'
         read_only_fields = ('user', 'economic_year', 'created_at', 'updated_at')
+    
+    def create(self, validated_data):
+        owner_user = get_owner_user_from_context(self.context)
+        if owner_user:
+            from authentication.models import EconomicYear
+            active_year = EconomicYear.objects.filter(user=owner_user, is_active=True).first()
+            if active_year:
+                validated_data['user'] = owner_user
+                validated_data['economic_year'] = active_year
+        return super().create(validated_data)
 
 class MenuItemSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True)
@@ -56,6 +91,16 @@ class MenuItemSerializer(serializers.ModelSerializer):
         model = MenuItem
         fields = '__all__'
         read_only_fields = ('user', 'economic_year', 'created_at', 'updated_at')
+    
+    def create(self, validated_data):
+        owner_user = get_owner_user_from_context(self.context)
+        if owner_user:
+            from authentication.models import EconomicYear
+            active_year = EconomicYear.objects.filter(user=owner_user, is_active=True).first()
+            if active_year:
+                validated_data['user'] = owner_user
+                validated_data['economic_year'] = active_year
+        return super().create(validated_data)
 
 class MenuIngredientSerializer(serializers.ModelSerializer):
     ingredient_name = serializers.CharField(source='ingredient.product_name', read_only=True)

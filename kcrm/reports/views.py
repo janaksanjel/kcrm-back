@@ -8,23 +8,33 @@ from inventory.models import Stock
 from datetime import datetime, timedelta
 import random
 
+def get_owner_user(request):
+    """Helper function to get the owner user (shop owner for staff, or user itself)"""
+    try:
+        from staff.models import Staff
+        staff = Staff.objects.get(user=request.user)
+        return staff.shop_owner
+    except Staff.DoesNotExist:
+        return request.user
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_reports(request):
+    owner_user = get_owner_user(request)
     report_type = request.GET.get('type', 'sales')
     mode = request.GET.get('mode', 'kirana')
     eco_year_id = request.GET.get('eco_year_id')
     
     if report_type == 'sales':
-        return Response(generate_sales_data(request.user, mode, eco_year_id))
+        return Response(generate_sales_data(owner_user, mode, eco_year_id))
     elif report_type == 'inventory':
-        return Response(generate_inventory_data(request.user, mode, eco_year_id))
+        return Response(generate_inventory_data(owner_user, mode, eco_year_id))
     elif report_type == 'financial':
-        return Response(generate_financial_data(request.user, mode, eco_year_id))
+        return Response(generate_financial_data(owner_user, mode, eco_year_id))
     elif report_type == 'customer':
-        return Response(generate_customer_data(request.user, mode, eco_year_id))
+        return Response(generate_customer_data(owner_user, mode, eco_year_id))
     elif report_type == 'performance':
-        return Response(generate_performance_data(request.user, mode, eco_year_id))
+        return Response(generate_performance_data(owner_user, mode, eco_year_id))
     
     return Response({'error': 'Invalid report type'}, status=400)
 

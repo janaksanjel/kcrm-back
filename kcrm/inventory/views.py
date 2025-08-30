@@ -6,12 +6,23 @@ from authentication.models import EconomicYear
 from .models import Category, Supplier, Purchase, Stock
 from .serializers import CategorySerializer, SupplierSerializer, StockSerializer
 from django.db.models import Sum, Count
+from staff.models import Staff
+
+def get_owner_user(request):
+    """Get the shop owner user for staff or return the user itself for shop owners"""
+    if request.user.role == 'staff':
+        try:
+            staff = Staff.objects.get(user=request.user)
+            return staff.shop_owner
+        except Staff.DoesNotExist:
+            return request.user
+    return request.user
 
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def categories(request):
-    # Get active economic year
-    active_year = EconomicYear.objects.filter(user=request.user, is_active=True).first()
+    owner_user = get_owner_user(request)
+    active_year = EconomicYear.objects.filter(user=owner_user, is_active=True).first()
     if not active_year:
         return Response({
             'success': False,
@@ -21,10 +32,9 @@ def categories(request):
     if request.method == 'GET':
         mode = request.GET.get('mode', 'kirana')
         try:
-            categories = Category.objects.filter(user=request.user, economic_year=active_year, mode=mode)
+            categories = Category.objects.filter(user=owner_user, economic_year=active_year, mode=mode)
         except Exception as e:
-            # Fallback for existing data without mode
-            categories = Category.objects.filter(user=request.user, economic_year=active_year)
+            categories = Category.objects.filter(user=owner_user, economic_year=active_year)
         serializer = CategorySerializer(categories, many=True)
         return Response({
             'success': True,
@@ -32,7 +42,7 @@ def categories(request):
         })
     
     elif request.method == 'POST':
-        serializer = CategorySerializer(data=request.data, context={'request': request})
+        serializer = CategorySerializer(data=request.data, context={'request': request, 'owner_user': owner_user})
         if serializer.is_valid():
             serializer.save()
             return Response({
@@ -49,8 +59,9 @@ def categories(request):
 @permission_classes([IsAuthenticated])
 def manage_category(request, category_id):
     try:
-        active_year = EconomicYear.objects.filter(user=request.user, is_active=True).first()
-        category = Category.objects.get(id=category_id, user=request.user, economic_year=active_year)
+        owner_user = get_owner_user(request)
+        active_year = EconomicYear.objects.filter(user=owner_user, is_active=True).first()
+        category = Category.objects.get(id=category_id, user=owner_user, economic_year=active_year)
         
         if request.method == 'PUT':
             serializer = CategorySerializer(category, data=request.data, partial=True)
@@ -82,7 +93,8 @@ def manage_category(request, category_id):
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def suppliers(request):
-    active_year = EconomicYear.objects.filter(user=request.user, is_active=True).first()
+    owner_user = get_owner_user(request)
+    active_year = EconomicYear.objects.filter(user=owner_user, is_active=True).first()
     if not active_year:
         return Response({
             'success': False,
@@ -92,10 +104,9 @@ def suppliers(request):
     if request.method == 'GET':
         mode = request.GET.get('mode', 'kirana')
         try:
-            suppliers = Supplier.objects.filter(user=request.user, economic_year=active_year, mode=mode)
+            suppliers = Supplier.objects.filter(user=owner_user, economic_year=active_year, mode=mode)
         except Exception as e:
-            # Fallback for existing data without mode
-            suppliers = Supplier.objects.filter(user=request.user, economic_year=active_year)
+            suppliers = Supplier.objects.filter(user=owner_user, economic_year=active_year)
         serializer = SupplierSerializer(suppliers, many=True)
         return Response({
             'success': True,
@@ -103,7 +114,7 @@ def suppliers(request):
         })
     
     elif request.method == 'POST':
-        serializer = SupplierSerializer(data=request.data, context={'request': request})
+        serializer = SupplierSerializer(data=request.data, context={'request': request, 'owner_user': owner_user})
         if serializer.is_valid():
             serializer.save()
             return Response({
@@ -120,8 +131,9 @@ def suppliers(request):
 @permission_classes([IsAuthenticated])
 def manage_supplier(request, supplier_id):
     try:
-        active_year = EconomicYear.objects.filter(user=request.user, is_active=True).first()
-        supplier = Supplier.objects.get(id=supplier_id, user=request.user, economic_year=active_year)
+        owner_user = get_owner_user(request)
+        active_year = EconomicYear.objects.filter(user=owner_user, is_active=True).first()
+        supplier = Supplier.objects.get(id=supplier_id, user=owner_user, economic_year=active_year)
         
         if request.method == 'PUT':
             serializer = SupplierSerializer(supplier, data=request.data, partial=True)
@@ -153,7 +165,8 @@ def manage_supplier(request, supplier_id):
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def purchases(request):
-    active_year = EconomicYear.objects.filter(user=request.user, is_active=True).first()
+    owner_user = get_owner_user(request)
+    active_year = EconomicYear.objects.filter(user=owner_user, is_active=True).first()
     if not active_year:
         return Response({
             'success': False,
@@ -163,10 +176,9 @@ def purchases(request):
     if request.method == 'GET':
         mode = request.GET.get('mode', 'kirana')
         try:
-            purchases = Purchase.objects.filter(user=request.user, economic_year=active_year, mode=mode)
+            purchases = Purchase.objects.filter(user=owner_user, economic_year=active_year, mode=mode)
         except Exception as e:
-            # Fallback for existing data without mode
-            purchases = Purchase.objects.filter(user=request.user, economic_year=active_year)
+            purchases = Purchase.objects.filter(user=owner_user, economic_year=active_year)
         from .serializers import PurchaseSerializer
         serializer = PurchaseSerializer(purchases, many=True)
         return Response({
@@ -176,7 +188,7 @@ def purchases(request):
     
     elif request.method == 'POST':
         from .serializers import PurchaseSerializer
-        serializer = PurchaseSerializer(data=request.data, context={'request': request})
+        serializer = PurchaseSerializer(data=request.data, context={'request': request, 'owner_user': owner_user})
         if serializer.is_valid():
             serializer.save()
             return Response({
@@ -193,8 +205,9 @@ def purchases(request):
 @permission_classes([IsAuthenticated])
 def manage_purchase(request, purchase_id):
     try:
-        active_year = EconomicYear.objects.filter(user=request.user, is_active=True).first()
-        purchase = Purchase.objects.get(id=purchase_id, user=request.user, economic_year=active_year)
+        owner_user = get_owner_user(request)
+        active_year = EconomicYear.objects.filter(user=owner_user, is_active=True).first()
+        purchase = Purchase.objects.get(id=purchase_id, user=owner_user, economic_year=active_year)
         
         if request.method == 'PUT':
             from .serializers import PurchaseSerializer
@@ -227,7 +240,8 @@ def manage_purchase(request, purchase_id):
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def stocks(request):
-    active_year = EconomicYear.objects.filter(user=request.user, is_active=True).first()
+    owner_user = get_owner_user(request)
+    active_year = EconomicYear.objects.filter(user=owner_user, is_active=True).first()
     if not active_year:
         return Response({
             'success': False,
@@ -237,10 +251,9 @@ def stocks(request):
     if request.method == 'GET':
         mode = request.GET.get('mode', 'kirana')
         try:
-            stocks = Stock.objects.filter(user=request.user, economic_year=active_year, mode=mode)
+            stocks = Stock.objects.filter(user=owner_user, economic_year=active_year, mode=mode)
         except Exception as e:
-            # Fallback for existing data without mode
-            stocks = Stock.objects.filter(user=request.user, economic_year=active_year)
+            stocks = Stock.objects.filter(user=owner_user, economic_year=active_year)
         
         # Enhance stock data with purchase information
         enhanced_stocks = []
@@ -251,7 +264,7 @@ def stocks(request):
             try:
                 latest_purchase = Purchase.objects.filter(
                     product_name=stock.product_name,
-                    user=request.user,
+                    user=owner_user,
                     economic_year=active_year,
                     mode=mode
                 ).order_by('-created_at').first()
@@ -282,7 +295,7 @@ def stocks(request):
         })
     
     elif request.method == 'POST':
-        serializer = StockSerializer(data=request.data, context={'request': request})
+        serializer = StockSerializer(data=request.data, context={'request': request, 'owner_user': owner_user})
         if serializer.is_valid():
             serializer.save()
             return Response({
@@ -299,8 +312,9 @@ def stocks(request):
 @permission_classes([IsAuthenticated])
 def manage_stock(request, stock_id):
     try:
-        active_year = EconomicYear.objects.filter(user=request.user, is_active=True).first()
-        stock = Stock.objects.get(id=stock_id, user=request.user, economic_year=active_year)
+        owner_user = get_owner_user(request)
+        active_year = EconomicYear.objects.filter(user=owner_user, is_active=True).first()
+        stock = Stock.objects.get(id=stock_id, user=owner_user, economic_year=active_year)
         
         if request.method == 'PUT':
             serializer = StockSerializer(stock, data=request.data, partial=True)
@@ -332,21 +346,20 @@ def manage_stock(request, stock_id):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def reports(request):
-    active_year = EconomicYear.objects.filter(user=request.user, is_active=True).first()
+    owner_user = get_owner_user(request)
+    active_year = EconomicYear.objects.filter(user=owner_user, is_active=True).first()
     if not active_year:
         return Response({
             'success': False,
             'message': 'No active economic year found'
         }, status=status.HTTP_400_BAD_REQUEST)
     
-    # Get mode from query params
     mode = request.GET.get('mode', 'kirana')
     
-    # Get all data filtered by mode
-    stocks = Stock.objects.filter(user=request.user, economic_year=active_year, mode=mode)
-    purchases = Purchase.objects.filter(user=request.user, economic_year=active_year, mode=mode)
-    suppliers = Supplier.objects.filter(user=request.user, economic_year=active_year, mode=mode)
-    categories = Category.objects.filter(user=request.user, economic_year=active_year, mode=mode)
+    stocks = Stock.objects.filter(user=owner_user, economic_year=active_year, mode=mode)
+    purchases = Purchase.objects.filter(user=owner_user, economic_year=active_year, mode=mode)
+    suppliers = Supplier.objects.filter(user=owner_user, economic_year=active_year, mode=mode)
+    categories = Category.objects.filter(user=owner_user, economic_year=active_year, mode=mode)
     
     # Calculate inventory summary
     total_value = sum(stock.current_stock * 50 for stock in stocks)  # Assuming avg price 50
@@ -411,14 +424,15 @@ def reports(request):
 @permission_classes([IsAuthenticated])
 def untransfer_from_stock(request, purchase_id):
     try:
-        active_year = EconomicYear.objects.filter(user=request.user, is_active=True).first()
+        owner_user = get_owner_user(request)
+        active_year = EconomicYear.objects.filter(user=owner_user, is_active=True).first()
         if not active_year:
             return Response({
                 'success': False,
                 'message': 'No active economic year found'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        purchase = Purchase.objects.get(id=purchase_id, user=request.user, economic_year=active_year)
+        purchase = Purchase.objects.get(id=purchase_id, user=owner_user, economic_year=active_year)
         
         # Check if not transferred
         if not purchase.isTransferredStock:
@@ -431,7 +445,7 @@ def untransfer_from_stock(request, purchase_id):
         try:
             stock = Stock.objects.get(
                 product_name=purchase.product_name,
-                user=request.user,
+                user=owner_user,
                 economic_year=active_year,
                 mode=purchase.mode
             )
@@ -479,14 +493,15 @@ def untransfer_from_stock(request, purchase_id):
 @permission_classes([IsAuthenticated])
 def transfer_to_stock(request, purchase_id):
     try:
-        active_year = EconomicYear.objects.filter(user=request.user, is_active=True).first()
+        owner_user = get_owner_user(request)
+        active_year = EconomicYear.objects.filter(user=owner_user, is_active=True).first()
         if not active_year:
             return Response({
                 'success': False,
                 'message': 'No active economic year found'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        purchase = Purchase.objects.get(id=purchase_id, user=request.user, economic_year=active_year)
+        purchase = Purchase.objects.get(id=purchase_id, user=owner_user, economic_year=active_year)
         
         # Check if already transferred
         if purchase.isTransferredStock:
@@ -498,7 +513,7 @@ def transfer_to_stock(request, purchase_id):
         # Create or update stock
         stock, created = Stock.objects.get_or_create(
             product_name=purchase.product_name,
-            user=request.user,
+            user=owner_user,
             economic_year=active_year,
             mode=purchase.mode,
             defaults={
@@ -544,7 +559,8 @@ def transfer_to_stock(request, purchase_id):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def dashboard_stats(request):
-    active_year = EconomicYear.objects.filter(user=request.user, is_active=True).first()
+    owner_user = get_owner_user(request)
+    active_year = EconomicYear.objects.filter(user=owner_user, is_active=True).first()
     if not active_year:
         return Response({
             'success': False,
@@ -553,18 +569,16 @@ def dashboard_stats(request):
     
     mode = request.GET.get('mode', 'kirana')
     
-    # Get counts for dashboard with fallback
     try:
-        total_categories = Category.objects.filter(user=request.user, economic_year=active_year, mode=mode).count()
-        total_suppliers = Supplier.objects.filter(user=request.user, economic_year=active_year, mode=mode).count()
-        total_purchases = Purchase.objects.filter(user=request.user, economic_year=active_year, mode=mode).count()
-        low_stock_items = Stock.objects.filter(user=request.user, economic_year=active_year, mode=mode, status='Low').count()
+        total_categories = Category.objects.filter(user=owner_user, economic_year=active_year, mode=mode).count()
+        total_suppliers = Supplier.objects.filter(user=owner_user, economic_year=active_year, mode=mode).count()
+        total_purchases = Purchase.objects.filter(user=owner_user, economic_year=active_year, mode=mode).count()
+        low_stock_items = Stock.objects.filter(user=owner_user, economic_year=active_year, mode=mode, status='Low').count()
     except Exception as e:
-        # Fallback for existing data without mode
-        total_categories = Category.objects.filter(user=request.user, economic_year=active_year).count()
-        total_suppliers = Supplier.objects.filter(user=request.user, economic_year=active_year).count()
-        total_purchases = Purchase.objects.filter(user=request.user, economic_year=active_year).count()
-        low_stock_items = Stock.objects.filter(user=request.user, economic_year=active_year, status='Low').count()
+        total_categories = Category.objects.filter(user=owner_user, economic_year=active_year).count()
+        total_suppliers = Supplier.objects.filter(user=owner_user, economic_year=active_year).count()
+        total_purchases = Purchase.objects.filter(user=owner_user, economic_year=active_year).count()
+        low_stock_items = Stock.objects.filter(user=owner_user, economic_year=active_year, status='Low').count()
     
     return Response({
         'success': True,

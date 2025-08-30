@@ -15,6 +15,17 @@ from .serializers import (
     KitchenOrderSerializer, StockSerializer
 )
 from inventory.models import Stock, Category, Supplier, Purchase
+from staff.models import Staff
+
+def get_owner_user(request):
+    """Get the shop owner user for staff or return the user itself for shop owners"""
+    if request.user.role == 'staff':
+        try:
+            staff = Staff.objects.get(user=request.user)
+            return staff.shop_owner
+        except Staff.DoesNotExist:
+            return request.user
+    return request.user
 
 class CustomerViewSet(viewsets.ModelViewSet):
     queryset = Customer.objects.all()
@@ -23,8 +34,9 @@ class CustomerViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         from authentication.models import EconomicYear
         try:
-            active_eco_year = EconomicYear.objects.get(user=self.request.user, is_active=True)
-            queryset = Customer.objects.filter(user=self.request.user, economic_year=active_eco_year)
+            owner_user = get_owner_user(self.request)
+            active_eco_year = EconomicYear.objects.get(user=owner_user, is_active=True)
+            queryset = Customer.objects.filter(user=owner_user, economic_year=active_eco_year)
         except EconomicYear.DoesNotExist:
             queryset = Customer.objects.none()
             
@@ -68,8 +80,9 @@ class CustomerViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         from authentication.models import EconomicYear
-        active_eco_year = EconomicYear.objects.get(user=self.request.user, is_active=True)
-        serializer.save(user=self.request.user, economic_year=active_eco_year)
+        owner_user = get_owner_user(self.request)
+        active_eco_year = EconomicYear.objects.get(user=owner_user, is_active=True)
+        serializer.save(user=owner_user, economic_year=active_eco_year)
     
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -139,7 +152,8 @@ class CustomerViewSet(viewsets.ModelViewSet):
             with transaction.atomic():
                 from authentication.models import EconomicYear
                 try:
-                    active_eco_year = EconomicYear.objects.get(user=request.user, is_active=True)
+                    owner_user = get_owner_user(request)
+                    active_eco_year = EconomicYear.objects.get(user=owner_user, is_active=True)
                 except EconomicYear.DoesNotExist:
                     return Response({
                         'success': False,
@@ -164,7 +178,7 @@ class CustomerViewSet(viewsets.ModelViewSet):
                     credit_amount=Decimal('0'),
                     points_earned=0,
                     mode=customer.mode,
-                    cashier=request.user,
+                    cashier=owner_user,
                     economic_year=active_eco_year
                 )
                 
@@ -314,8 +328,9 @@ class SaleViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         from authentication.models import EconomicYear
         try:
-            active_eco_year = EconomicYear.objects.get(user=self.request.user, is_active=True)
-            queryset = Sale.objects.filter(cashier=self.request.user, economic_year=active_eco_year)
+            owner_user = get_owner_user(self.request)
+            active_eco_year = EconomicYear.objects.get(user=owner_user, is_active=True)
+            queryset = Sale.objects.filter(cashier=owner_user, economic_year=active_eco_year)
         except EconomicYear.DoesNotExist:
             queryset = Sale.objects.none()
             
@@ -344,8 +359,9 @@ class SaleViewSet(viewsets.ModelViewSet):
                     
                     # Get active economic year
                     from authentication.models import EconomicYear
+                    owner_user = get_owner_user(request)
                     try:
-                        active_eco_year = EconomicYear.objects.get(user=request.user, is_active=True)
+                        active_eco_year = EconomicYear.objects.get(user=owner_user, is_active=True)
                     except EconomicYear.DoesNotExist:
                         return Response({
                             'success': False,
@@ -362,12 +378,12 @@ class SaleViewSet(viewsets.ModelViewSet):
                             try:
                                 stock = Stock.objects.get(
                                     id=item['id'],
-                                    user=request.user,
+                                    user=owner_user,
                                     economic_year=active_eco_year
                                 )
                                 purchase = Purchase.objects.filter(
                                     product_name=stock.product_name,
-                                    user=request.user,
+                                    user=owner_user,
                                     economic_year=active_eco_year
                                 ).order_by('-created_at').first()
                                 
@@ -402,7 +418,7 @@ class SaleViewSet(viewsets.ModelViewSet):
                         
                         if table_id and Table:
                             try:
-                                table = Table.objects.get(id=table_id, user=request.user)
+                                table = Table.objects.get(id=table_id, user=owner_user)
                                 floor_name = table.room.floor.name if table.room and table.room.floor else 'Floor'
                                 room_name = table.room.name if table.room else 'Room'
                                 table_name = f'{floor_name} - {room_name} - {table.name}'
@@ -422,7 +438,7 @@ class SaleViewSet(viewsets.ModelViewSet):
                             total=total,
                             status='pending',
                             notes=data.get('notes', ''),
-                            user=request.user,
+                            user=owner_user,
                             economic_year=active_eco_year
                         )
                         
@@ -441,7 +457,7 @@ class SaleViewSet(viewsets.ModelViewSet):
                             try:
                                 customer, created = Customer.objects.get_or_create(
                                     phone=data.get('customer_phone'),
-                                    user=request.user,
+                                    user=owner_user,
                                     economic_year=active_eco_year,
                                     mode='restaurant',
                                     defaults={
@@ -478,7 +494,7 @@ class SaleViewSet(viewsets.ModelViewSet):
                             try:
                                 customer, created = Customer.objects.get_or_create(
                                     phone=data.get('customer_phone'),
-                                    user=request.user,
+                                    user=owner_user,
                                     economic_year=active_eco_year,
                                     mode=data.get('mode', 'kirana'),
                                     defaults={
@@ -494,7 +510,7 @@ class SaleViewSet(viewsets.ModelViewSet):
                                 try:
                                     customer = Customer.objects.get(
                                         phone=data.get('customer_phone'),
-                                        user=request.user,
+                                        user=owner_user,
                                         economic_year=active_eco_year,
                                         mode=data.get('mode', 'kirana')
                                     )
@@ -524,7 +540,7 @@ class SaleViewSet(viewsets.ModelViewSet):
                             credit_amount=Decimal(str(data.get('credit_amount', 0))),
                             points_earned=points_earned,
                             mode=data.get('mode', 'kirana'),
-                            cashier=request.user,
+                            cashier=owner_user,
                             economic_year=active_eco_year
                         )
                         
@@ -533,7 +549,7 @@ class SaleViewSet(viewsets.ModelViewSet):
                             try:
                                 stock = Stock.objects.get(
                                     id=item['id'],
-                                    user=request.user,
+                                    user=owner_user,
                                     economic_year=active_eco_year
                                 )
                                 
@@ -588,13 +604,13 @@ class SaleViewSet(viewsets.ModelViewSet):
     def dashboard_stats(self, request):
         from authentication.models import EconomicYear
         try:
-            active_eco_year = EconomicYear.objects.get(user=request.user, is_active=True)
+            owner_user = get_owner_user(request)
+            active_eco_year = EconomicYear.objects.get(user=owner_user, is_active=True)
             today = timezone.now().date()
             
-            # Filter by mode if provided
             mode_filter = request.query_params.get('mode', 'kirana')
             today_sales = Sale.objects.filter(
-                cashier=request.user, 
+                cashier=owner_user, 
                 economic_year=active_eco_year,
                 created_at__date=today
             )
@@ -630,13 +646,13 @@ class SaleViewSet(viewsets.ModelViewSet):
     def reports(self, request):
         from authentication.models import EconomicYear
         try:
-            active_eco_year = EconomicYear.objects.get(user=request.user, is_active=True)
+            owner_user = get_owner_user(request)
+            active_eco_year = EconomicYear.objects.get(user=owner_user, is_active=True)
             today = timezone.now().date()
             mode_filter = request.query_params.get('mode', 'kirana')
             
-            # Today's stats
             today_sales = Sale.objects.filter(
-                cashier=request.user,
+                cashier=owner_user,
                 economic_year=active_eco_year,
                 created_at__date=today
             )
@@ -649,7 +665,7 @@ class SaleViewSet(viewsets.ModelViewSet):
             # This week's stats
             week_start = today - timedelta(days=today.weekday())
             week_sales = Sale.objects.filter(
-                cashier=request.user,
+                cashier=owner_user,
                 economic_year=active_eco_year,
                 created_at__date__gte=week_start
             )
@@ -717,8 +733,9 @@ class StockViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         from authentication.models import EconomicYear
         try:
-            active_eco_year = EconomicYear.objects.get(user=self.request.user, is_active=True)
-            return Stock.objects.filter(user=self.request.user, economic_year=active_eco_year)
+            owner_user = get_owner_user(self.request)
+            active_eco_year = EconomicYear.objects.get(user=owner_user, is_active=True)
+            return Stock.objects.filter(user=owner_user, economic_year=active_eco_year)
         except EconomicYear.DoesNotExist:
             return Stock.objects.none()
 
@@ -733,13 +750,12 @@ class StockViewSet(viewsets.ModelViewSet):
             
             # Get active economic year
             try:
-                active_eco_year = EconomicYear.objects.get(user=request.user, is_active=True)
+                owner_user = get_owner_user(request)
+                active_eco_year = EconomicYear.objects.get(user=owner_user, is_active=True)
             except EconomicYear.DoesNotExist:
-                # Return empty array if no active economic year
                 return Response([])
             
-            # Get all stocks for the user and economic year
-            stocks = Stock.objects.filter(user=request.user, economic_year=active_eco_year)
+            stocks = Stock.objects.filter(user=owner_user, economic_year=active_eco_year)
             
             # Apply search filter if provided
             search = request.query_params.get('search', None)
@@ -752,7 +768,7 @@ class StockViewSet(viewsets.ModelViewSet):
                     # Get purchase info for category and supplier
                     purchase = Purchase.objects.filter(
                         product_name=stock.product_name,
-                        user=request.user,
+                        user=owner_user,
                         economic_year=active_eco_year
                     ).order_by('-created_at').first()
                     
@@ -844,8 +860,9 @@ class StockViewSet(viewsets.ModelViewSet):
             from inventory.models import Purchase
             
             try:
-                active_eco_year = EconomicYear.objects.get(user=request.user, is_active=True)
-                stocks = Stock.objects.filter(user=request.user, economic_year=active_eco_year)
+                owner_user = get_owner_user(request)
+                active_eco_year = EconomicYear.objects.get(user=owner_user, is_active=True)
+                stocks = Stock.objects.filter(user=owner_user, economic_year=active_eco_year)
             except EconomicYear.DoesNotExist:
                 stocks = Stock.objects.none()
             
@@ -861,7 +878,7 @@ class StockViewSet(viewsets.ModelViewSet):
                     # Calculate value from purchases
                     purchase = Purchase.objects.filter(
                         product_name=stock.product_name,
-                        user=request.user,
+                        user=owner_user,
                         economic_year=active_eco_year
                     ).order_by('-created_at').first()
                     
@@ -921,8 +938,9 @@ class MenuCategoryViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         from authentication.models import EconomicYear
         try:
-            active_eco_year = EconomicYear.objects.get(user=self.request.user, is_active=True)
-            queryset = MenuCategory.objects.filter(user=self.request.user, economic_year=active_eco_year)
+            owner_user = get_owner_user(self.request)
+            active_eco_year = EconomicYear.objects.get(user=owner_user, is_active=True)
+            queryset = MenuCategory.objects.filter(user=owner_user, economic_year=active_eco_year)
         except EconomicYear.DoesNotExist:
             queryset = MenuCategory.objects.none()
         
@@ -934,8 +952,9 @@ class MenuCategoryViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         from authentication.models import EconomicYear
-        active_eco_year = EconomicYear.objects.get(user=self.request.user, is_active=True)
-        serializer.save(user=self.request.user, economic_year=active_eco_year)
+        owner_user = get_owner_user(self.request)
+        active_eco_year = EconomicYear.objects.get(user=owner_user, is_active=True)
+        serializer.save(user=owner_user, economic_year=active_eco_year)
 
 class MenuItemViewSet(viewsets.ModelViewSet):
     queryset = MenuItem.objects.all()
@@ -949,8 +968,9 @@ class MenuItemViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         from authentication.models import EconomicYear
         try:
-            active_eco_year = EconomicYear.objects.get(user=self.request.user, is_active=True)
-            queryset = MenuItem.objects.filter(user=self.request.user, economic_year=active_eco_year)
+            owner_user = get_owner_user(self.request)
+            active_eco_year = EconomicYear.objects.get(user=owner_user, is_active=True)
+            queryset = MenuItem.objects.filter(user=owner_user, economic_year=active_eco_year)
         except EconomicYear.DoesNotExist:
             queryset = MenuItem.objects.none()
         
@@ -972,8 +992,9 @@ class MenuItemViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         from authentication.models import EconomicYear
-        active_eco_year = EconomicYear.objects.get(user=self.request.user, is_active=True)
-        serializer.save(user=self.request.user, economic_year=active_eco_year)
+        owner_user = get_owner_user(self.request)
+        active_eco_year = EconomicYear.objects.get(user=owner_user, is_active=True)
+        serializer.save(user=owner_user, economic_year=active_eco_year)
     
     @action(detail=True, methods=['get', 'post'])
     def ingredients(self, request, pk=None):
@@ -999,7 +1020,8 @@ class MenuItemViewSet(viewsets.ModelViewSet):
                 except (ValueError, TypeError):
                     return Response({'error': 'Invalid ingredient ID format'}, status=status.HTTP_400_BAD_REQUEST)
                 
-                ingredient = Stock.objects.get(id=ingredient_id, user=request.user)
+                owner_user = get_owner_user(request)
+                ingredient = Stock.objects.get(id=ingredient_id, user=owner_user)
                 menu_ingredient, created = MenuIngredient.objects.get_or_create(
                     menu_item=menu_item,
                     ingredient=ingredient,

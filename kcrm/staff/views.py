@@ -4,6 +4,14 @@ from rest_framework.response import Response
 from .models import Role, Staff
 from .serializers import RoleSerializer, StaffSerializer
 
+def get_owner_user(request):
+    """Helper function to get the owner user (shop owner for staff, or user itself)"""
+    try:
+        staff = Staff.objects.get(user=request.user)
+        return staff.shop_owner
+    except Staff.DoesNotExist:
+        return request.user
+
 class RoleViewSet(viewsets.ModelViewSet):
     queryset = Role.objects.all().order_by('-created_date')
     serializer_class = RoleSerializer
@@ -38,21 +46,28 @@ class StaffViewSet(viewsets.ModelViewSet):
     serializer_class = StaffSerializer
 
     def get_queryset(self):
-        queryset = Staff.objects.filter(shop_owner=self.request.user).order_by('-created_date')
+        owner_user = get_owner_user(self.request)
+        queryset = Staff.objects.filter(shop_owner=owner_user).order_by('-created_date')
         mode = self.request.query_params.get('mode')
         if mode:
             queryset = queryset.filter(mode=mode)
         return queryset
 
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['owner_user'] = get_owner_user(self.request)
+        return context
+
     def perform_create(self, serializer):
+        owner_user = get_owner_user(self.request)
         mode = self.request.data.get('mode', 'kirana')
         salary = self.request.data.get('salary')
         
         save_kwargs = {
-            'shop_owner': self.request.user,
+            'shop_owner': owner_user,
             'mode': mode,
-            'restaurant_id': getattr(self.request.user, 'restaurant_id', None),
-            'restaurant_name': getattr(self.request.user, 'shop_name', '')
+            'restaurant_id': getattr(owner_user, 'restaurant_id', None),
+            'restaurant_name': getattr(owner_user, 'shop_name', '')
         }
         
         if salary:
@@ -62,9 +77,10 @@ class StaffViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def by_role(self, request):
+        owner_user = get_owner_user(request)
         role_id = request.query_params.get('role_id')
         if role_id:
-            staff = Staff.objects.filter(role_id=role_id, is_active=True, shop_owner=request.user)
+            staff = Staff.objects.filter(role_id=role_id, is_active=True, shop_owner=owner_user)
             serializer = self.get_serializer(staff, many=True)
             return Response(serializer.data)
         return Response({'error': 'role_id parameter required'}, status=status.HTTP_400_BAD_REQUEST)
@@ -73,8 +89,9 @@ class StaffViewSet(viewsets.ModelViewSet):
     def view_credentials(self, request, pk=None):
         from authentication.models import StoreConfig
         
+        owner_user = get_owner_user(request)
         staff = self.get_object()
-        if staff.shop_owner != request.user:
+        if staff.shop_owner != owner_user:
             return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
         
         # Split username to get shortcode and user parts
@@ -84,7 +101,7 @@ class StaffViewSet(viewsets.ModelViewSet):
         else:
             # Fallback for old usernames without shortcode
             try:
-                store_config = StoreConfig.objects.get(user=request.user)
+                store_config = StoreConfig.objects.get(user=owner_user)
                 shortcode = store_config.store_shortcode or 'shop'
             except StoreConfig.DoesNotExist:
                 shortcode = 'shop'
@@ -102,8 +119,9 @@ class StaffViewSet(viewsets.ModelViewSet):
         import random
         import string
         
+        owner_user = get_owner_user(request)
         staff = self.get_object()
-        if staff.shop_owner != request.user:
+        if staff.shop_owner != owner_user:
             return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
         
         # Get new password from request or generate one
@@ -130,8 +148,9 @@ class StaffViewSet(viewsets.ModelViewSet):
         from django.contrib.auth import get_user_model
         
         User = get_user_model()
+        owner_user = get_owner_user(request)
         staff = self.get_object()
-        if staff.shop_owner != request.user:
+        if staff.shop_owner != owner_user:
             return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
         
         # Generate new username
@@ -162,8 +181,9 @@ class StaffViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def toggle_status(self, request, pk=None):
+        owner_user = get_owner_user(request)
         staff = self.get_object()
-        if staff.shop_owner != request.user:
+        if staff.shop_owner != owner_user:
             return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
         
         # Toggle the is_active status
@@ -180,8 +200,9 @@ class StaffViewSet(viewsets.ModelViewSet):
     def get_staff_permissions(self, request, pk=None):
         from .models import Permission
         
+        owner_user = get_owner_user(request)
         staff = self.get_object()
-        if staff.shop_owner != request.user:
+        if staff.shop_owner != owner_user:
             return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
         
         try:
@@ -200,8 +221,9 @@ class StaffViewSet(viewsets.ModelViewSet):
     def update_permissions(self, request, pk=None):
         from .models import Permission
         
+        owner_user = get_owner_user(request)
         staff = self.get_object()
-        if staff.shop_owner != request.user:
+        if staff.shop_owner != owner_user:
             return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
         
         permissions_data = request.data.get('permissions', {})

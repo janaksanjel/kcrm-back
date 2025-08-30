@@ -13,8 +13,7 @@ class CategorySerializer(serializers.ModelSerializer):
         return obj.purchases.count()
     
     def create(self, validated_data):
-        user = self.context['request'].user
-        # Get active economic year
+        user = self.context.get('owner_user', self.context['request'].user)
         from authentication.models import EconomicYear
         active_year = EconomicYear.objects.filter(user=user, is_active=True).first()
         if not active_year:
@@ -31,7 +30,7 @@ class SupplierSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
     
     def create(self, validated_data):
-        user = self.context['request'].user
+        user = self.context.get('owner_user', self.context['request'].user)
         from authentication.models import EconomicYear
         active_year = EconomicYear.objects.filter(user=user, is_active=True).first()
         if not active_year:
@@ -53,7 +52,7 @@ class StockSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'status', 'created_at', 'updated_at']
     
     def create(self, validated_data):
-        user = self.context['request'].user
+        user = self.context.get('owner_user', self.context['request'].user)
         from authentication.models import EconomicYear
         active_year = EconomicYear.objects.filter(user=user, is_active=True).first()
         if not active_year:
@@ -77,7 +76,7 @@ class PurchaseSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'total_amount', 'created_at', 'updated_at']
     
     def create(self, validated_data):
-        user = self.context['request'].user
+        user = self.context.get('owner_user', self.context['request'].user)
         from authentication.models import EconomicYear
         active_year = EconomicYear.objects.filter(user=user, is_active=True).first()
         if not active_year:

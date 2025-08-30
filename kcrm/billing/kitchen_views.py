@@ -3,6 +3,17 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from .models import KitchenOrder, KitchenOrderItem
 from .serializers import KitchenOrderSerializer
+from staff.models import Staff
+
+def get_owner_user(request):
+    """Get the shop owner user for staff or return the user itself for shop owners"""
+    if request.user.role == 'staff':
+        try:
+            staff = Staff.objects.get(user=request.user)
+            return staff.shop_owner
+        except Staff.DoesNotExist:
+            return request.user
+    return request.user
 
 class KitchenOrderViewSet(viewsets.ModelViewSet):
     queryset = KitchenOrder.objects.all()
@@ -14,28 +25,24 @@ class KitchenOrderViewSet(viewsets.ModelViewSet):
         logger = logging.getLogger(__name__)
         
         try:
-            logger.info(f"Kitchen orders request from user: {self.request.user.username}, role: {self.request.user.role}, restaurant_id: {self.request.user.restaurant_id}")
+            logger.info(f"Kitchen orders request from user: {self.request.user.username}, role: {self.request.user.role}")
             
             # For kitchen users, get orders from their restaurant owner
             if self.request.user.role == 'kitchen_user' and self.request.user.restaurant_id:
-                # Find the restaurant owner with the same restaurant_id
                 restaurant_owner = User.objects.filter(
                     id=self.request.user.restaurant_id,
                     role='shop_owner'
                 ).first()
                 
-                logger.info(f"Found restaurant owner: {restaurant_owner}")
-                
                 if restaurant_owner:
                     active_eco_year = EconomicYear.objects.get(user=restaurant_owner, is_active=True)
                     orders = KitchenOrder.objects.filter(user=restaurant_owner, economic_year=active_eco_year).order_by('-created_at')
-                    logger.info(f"Kitchen orders found: {orders.count()}")
                     return orders
             else:
-                # For restaurant owners, get their own orders
-                active_eco_year = EconomicYear.objects.get(user=self.request.user, is_active=True)
-                orders = KitchenOrder.objects.filter(user=self.request.user, economic_year=active_eco_year).order_by('-created_at')
-                logger.info(f"Restaurant owner orders found: {orders.count()}")
+                # For restaurant owners and staff, get owner's orders
+                owner_user = get_owner_user(self.request)
+                active_eco_year = EconomicYear.objects.get(user=owner_user, is_active=True)
+                orders = KitchenOrder.objects.filter(user=owner_user, economic_year=active_eco_year).order_by('-created_at')
                 return orders
         except EconomicYear.DoesNotExist:
             logger.error("No active economic year found")
@@ -46,8 +53,9 @@ class KitchenOrderViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         from authentication.models import EconomicYear
-        active_eco_year = EconomicYear.objects.get(user=self.request.user, is_active=True)
-        serializer.save(user=self.request.user, economic_year=active_eco_year)
+        owner_user = get_owner_user(self.request)
+        active_eco_year = EconomicYear.objects.get(user=owner_user, is_active=True)
+        serializer.save(user=owner_user, economic_year=active_eco_year)
     
     @action(detail=True, methods=['patch'])
     def status(self, request, pk=None):
@@ -94,10 +102,11 @@ class KitchenOrderViewSet(viewsets.ModelViewSet):
                     serializer = self.get_serializer(orders, many=True)
                     return Response({'success': True, 'data': serializer.data})
             else:
-                # For restaurant owners
-                active_eco_year = EconomicYear.objects.get(user=self.request.user, is_active=True)
+                # For restaurant owners and staff
+                owner_user = get_owner_user(self.request)
+                active_eco_year = EconomicYear.objects.get(user=owner_user, is_active=True)
                 orders = KitchenOrder.objects.filter(
-                    user=self.request.user, 
+                    user=owner_user, 
                     economic_year=active_eco_year,
                     status='completed'
                 ).order_by('-created_at')

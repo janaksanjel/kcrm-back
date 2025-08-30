@@ -4,6 +4,15 @@ from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.hashers import check_password
 from .models import User, ShopOwnerFeatures, UserSession, EconomicYear, NotificationSettings, SecuritySettings, SecurityActivity
 
+def get_owner_user(request):
+    """Helper function to get the owner user (shop owner for staff, or user itself)"""
+    try:
+        from staff.models import Staff
+        staff = Staff.objects.get(user=request.user)
+        return staff.shop_owner
+    except Staff.DoesNotExist:
+        return request.user
+
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, validators=[validate_password])
     password_confirm = serializers.CharField(write_only=True)
@@ -85,7 +94,8 @@ class KitchenUserRegistrationSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         request = self.context.get('request')
-        restaurant_id = request.user.id if request.user.role == 'shop_owner' else None
+        owner_user = get_owner_user(request) if request else None
+        restaurant_id = owner_user.id if owner_user else None
         
         user = User.objects.create_user(
             username=validated_data['username'],
@@ -186,7 +196,7 @@ class EconomicYearSerializer(serializers.ModelSerializer):
         fields = ('id', 'name', 'start_date', 'end_date', 'status', 'is_active', 'created_at')
 
     def create(self, validated_data):
-        validated_data['user'] = self.context['request'].user
+        validated_data['user'] = self.context.get('owner_user', self.context['request'].user)
         return super().create(validated_data)
 
 class NotificationSettingsSerializer(serializers.ModelSerializer):

@@ -14,8 +14,19 @@ from .serializers import (
     NotificationSettingsSerializer, SecuritySettingsSerializer, SecurityActivitySerializer
 )
 from .models import UserSession, EconomicYear, NotificationSettings, SecuritySettings, SecurityActivity, StoreConfig
+from staff.models import Staff
 
 User = get_user_model()
+
+def get_owner_user(request):
+    """Get the shop owner user for staff or return the user itself for shop owners"""
+    if request.user.role == 'staff':
+        try:
+            staff = Staff.objects.get(user=request.user)
+            return staff.shop_owner
+        except Staff.DoesNotExist:
+            return request.user
+    return request.user
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -240,8 +251,27 @@ def logout(request):
         }, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def profile(request):
     user_data = UserSerializer(request.user).data
+    owner_user = get_owner_user(request)
+    
+    # Add store name for all users
+    user_data['store_name'] = owner_user.shop_name or 'N/A'
+    
+    # For staff users, show shop owner's shop name but keep staff's own phone
+    if request.user.role == 'staff':
+        user_data['shop_name'] = owner_user.shop_name or ''
+        
+        # Add staff role information
+        try:
+            staff = Staff.objects.get(user=request.user)
+            user_data['staff_role'] = staff.role.name if staff.role else 'Staff'
+            user_data['staff_role_emoji'] = staff.role.emoji if staff.role else '👤'
+        except Staff.DoesNotExist:
+            user_data['staff_role'] = 'Staff'
+            user_data['staff_role_emoji'] = '👤'
+    
     return Response({
         'success': True,
         'user': user_data
@@ -338,8 +368,9 @@ def terminate_all_sessions(request):
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def economic_years(request):
+    owner_user = get_owner_user(request)
     if request.method == 'GET':
-        years = EconomicYear.objects.filter(user=request.user).order_by('-created_at')
+        years = EconomicYear.objects.filter(user=owner_user).order_by('-created_at')
         serializer = EconomicYearSerializer(years, many=True)
         return Response({
             'success': True,
@@ -347,7 +378,7 @@ def economic_years(request):
         })
     
     elif request.method == 'POST':
-        serializer = EconomicYearSerializer(data=request.data, context={'request': request})
+        serializer = EconomicYearSerializer(data=request.data, context={'request': request, 'owner_user': owner_user})
         if serializer.is_valid():
             serializer.save()
             return Response({
@@ -364,7 +395,8 @@ def economic_years(request):
 @permission_classes([IsAuthenticated])
 def manage_economic_year(request, year_id):
     try:
-        year = EconomicYear.objects.get(id=year_id, user=request.user)
+        owner_user = get_owner_user(request)
+        year = EconomicYear.objects.get(id=year_id, user=owner_user)
         
         if request.method == 'PUT':
             serializer = EconomicYearSerializer(year, data=request.data, partial=True)
@@ -402,12 +434,12 @@ def manage_economic_year(request, year_id):
 @permission_classes([IsAuthenticated])
 def toggle_economic_year(request, year_id):
     try:
-        year = EconomicYear.objects.get(id=year_id, user=request.user)
+        owner_user = get_owner_user(request)
+        year = EconomicYear.objects.get(id=year_id, user=owner_user)
         if year.is_active:
             year.is_active = False
         else:
-            # Deactivate all other years first
-            EconomicYear.objects.filter(user=request.user).update(is_active=False)
+            EconomicYear.objects.filter(user=owner_user).update(is_active=False)
             year.is_active = True
         year.save()
         return Response({
@@ -426,7 +458,8 @@ def header_economic_years(request):
     if request.user.role == 'kitchen_user' and request.user.restaurant_id:
         years = EconomicYear.objects.filter(user_id=request.user.restaurant_id).order_by('-created_at')
     else:
-        years = EconomicYear.objects.filter(user=request.user).order_by('-created_at')
+        owner_user = get_owner_user(request)
+        years = EconomicYear.objects.filter(user=owner_user).order_by('-created_at')
     serializer = EconomicYearSerializer(years, many=True)
     return Response({
         'success': True,
@@ -498,8 +531,9 @@ def get_security_activity(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_kitchen_user(request):
-    # Only shop owners can create kitchen users
-    if request.user.role != 'shop_owner':
+    owner_user = get_owner_user(request)
+    # Only shop owners and staff can create kitchen users
+    if owner_user.role != 'shop_owner':
         return Response({
             'success': False,
             'message': 'Only shop owners can create kitchen users'
@@ -525,14 +559,15 @@ def create_kitchen_user(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_kitchen_users(request):
-    # Only shop owners can view kitchen users
-    if request.user.role != 'shop_owner':
+    owner_user = get_owner_user(request)
+    # Only shop owners and staff can view kitchen users
+    if owner_user.role != 'shop_owner':
         return Response({
             'success': False,
             'message': 'Only shop owners can view kitchen users'
         }, status=status.HTTP_403_FORBIDDEN)
     
-    kitchen_users = User.objects.filter(role='kitchen_user', restaurant_id=request.user.id)
+    kitchen_users = User.objects.filter(role='kitchen_user', restaurant_id=owner_user.id)
     serializer = UserSerializer(kitchen_users, many=True)
     
     return Response({
@@ -543,15 +578,16 @@ def get_kitchen_users(request):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def delete_kitchen_user(request, user_id):
-    # Only shop owners can delete kitchen users
-    if request.user.role != 'shop_owner':
+    owner_user = get_owner_user(request)
+    # Only shop owners and staff can delete kitchen users
+    if owner_user.role != 'shop_owner':
         return Response({
             'success': False,
             'message': 'Only shop owners can delete kitchen users'
         }, status=status.HTTP_403_FORBIDDEN)
     
     try:
-        user = User.objects.get(id=user_id, role='kitchen_user', restaurant_id=request.user.id)
+        user = User.objects.get(id=user_id, role='kitchen_user', restaurant_id=owner_user.id)
         user.delete()
         return Response({
             'success': True,
@@ -566,15 +602,16 @@ def delete_kitchen_user(request, user_id):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_kitchen_user_credentials(request, user_id):
-    # Only shop owners can view kitchen user credentials
-    if request.user.role != 'shop_owner':
+    owner_user = get_owner_user(request)
+    # Only shop owners and staff can view kitchen user credentials
+    if owner_user.role != 'shop_owner':
         return Response({
             'success': False,
             'message': 'Only shop owners can view kitchen user credentials'
         }, status=status.HTTP_403_FORBIDDEN)
     
     try:
-        user = User.objects.get(id=user_id, role='kitchen_user', restaurant_id=request.user.id)
+        user = User.objects.get(id=user_id, role='kitchen_user', restaurant_id=owner_user.id)
         return Response({
             'success': True,
             'data': {
@@ -591,15 +628,16 @@ def get_kitchen_user_credentials(request, user_id):
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 def update_kitchen_user_password(request, user_id):
-    # Only shop owners can update kitchen user passwords
-    if request.user.role != 'shop_owner':
+    owner_user = get_owner_user(request)
+    # Only shop owners and staff can update kitchen user passwords
+    if owner_user.role != 'shop_owner':
         return Response({
             'success': False,
             'message': 'Only shop owners can update kitchen user passwords'
         }, status=status.HTTP_403_FORBIDDEN)
     
     try:
-        user = User.objects.get(id=user_id, role='kitchen_user', restaurant_id=request.user.id)
+        user = User.objects.get(id=user_id, role='kitchen_user', restaurant_id=owner_user.id)
         new_password = request.data.get('password')
         
         if not new_password:
