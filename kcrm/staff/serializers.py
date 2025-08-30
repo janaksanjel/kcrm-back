@@ -84,6 +84,9 @@ class StaffSerializer(serializers.ModelSerializer):
             unhashed_password=password
         )
         
+        # Set restaurant_id to shop_owner's ID
+        validated_data['restaurant_id'] = request.user.id
+        
         # Create staff with the user
         staff = Staff.objects.create(user=user, **validated_data)
         return staff
