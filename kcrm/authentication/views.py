@@ -13,7 +13,7 @@ from .serializers import (
     KitchenUserRegistrationSerializer, ProfileUpdateSerializer, PasswordChangeSerializer, UserSessionSerializer, EconomicYearSerializer,
     NotificationSettingsSerializer, SecuritySettingsSerializer, SecurityActivitySerializer
 )
-from .models import UserSession, EconomicYear, NotificationSettings, SecuritySettings, SecurityActivity
+from .models import UserSession, EconomicYear, NotificationSettings, SecuritySettings, SecurityActivity, StoreConfig
 
 User = get_user_model()
 
