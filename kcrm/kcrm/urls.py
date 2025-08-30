@@ -9,7 +9,6 @@ urlpatterns = [
     path('api/inventory/', include('inventory.urls')),
     path('api/billing/', include('billing.urls')),
     path('api/reports/', include('reports.urls')),
-    path('api/staff/', include('staff.urls')),
 ]
 
 # Serve media files in development
