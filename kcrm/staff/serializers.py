@@ -51,9 +51,18 @@ class StaffSerializer(serializers.ModelSerializer):
         # Get mode from request
         mode = request.GET.get('mode', 'kirana')
         
-        # Generate username from email
-        email = validated_data['email']
-        username = email.split('@')[0]
+        # Generate username from store shortcode if available
+        from authentication.models import StoreConfig
+        try:
+            store_config = StoreConfig.objects.get(user=request.user)
+            shortcode = store_config.store_shortcode
+            # Generate username: shortcode + staff name (first word)
+            staff_name = validated_data['name'].split()[0].lower()
+            username = f"{shortcode}.{staff_name}"
+        except StoreConfig.DoesNotExist:
+            # Fallback to email-based username
+            email = validated_data['email']
+            username = email.split('@')[0]
         
         # Ensure unique username
         counter = 1
@@ -69,7 +78,7 @@ class StaffSerializer(serializers.ModelSerializer):
         # Create user account
         user = User.objects.create_user(
             username=username,
-            email=email,
+            email=validated_data['email'],
             password=password,
             first_name=validated_data['name'].split()[0],
             last_name=' '.join(validated_data['name'].split()[1:]) if len(validated_data['name'].split()) > 1 else '',
