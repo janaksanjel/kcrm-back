@@ -159,3 +159,19 @@ class StaffViewSet(viewsets.ModelViewSet):
             'new_username': new_username,
             'message': 'Username updated successfully'
         })
+    
+    @action(detail=True, methods=['post'])
+    def toggle_status(self, request, pk=None):
+        staff = self.get_object()
+        if staff.shop_owner != request.user:
+            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+        
+        # Toggle the is_active status
+        staff.is_active = not staff.is_active
+        staff.save()
+        
+        return Response({
+            'success': True,
+            'is_active': staff.is_active,
+            'message': f'Staff member {"activated" if staff.is_active else "deactivated"} successfully'
+        })
