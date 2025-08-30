@@ -23,10 +23,10 @@ class StaffSerializer(serializers.ModelSerializer):
     role_emoji = serializers.CharField(source='role.emoji', read_only=True)
     shop_owner = serializers.PrimaryKeyRelatedField(read_only=True)
     
-    # User creation fields
-    first_name = serializers.CharField(write_only=True)
-    last_name = serializers.CharField(write_only=True)
-    email = serializers.EmailField(write_only=True)
+    # User fields for create and update
+    first_name = serializers.CharField(write_only=True, required=False)
+    last_name = serializers.CharField(write_only=True, required=False)
+    email = serializers.EmailField(write_only=True, required=False)
 
     class Meta:
         model = Staff
@@ -90,3 +90,38 @@ class StaffSerializer(serializers.ModelSerializer):
         # Create staff with the user
         staff = Staff.objects.create(user=user, **validated_data)
         return staff
+    
+    def update(self, instance, validated_data):
+        print(f"Update method called with validated_data: {validated_data}")
+        
+        # Extract user data if present
+        first_name = validated_data.pop('first_name', None)
+        last_name = validated_data.pop('last_name', None)
+        email = validated_data.pop('email', None)
+        
+        print(f"Extracted user data - first_name: {first_name}, last_name: {last_name}, email: {email}")
+        
+        # Update user fields if provided
+        if first_name is not None or last_name is not None or email is not None:
+            user = instance.user
+            print(f"Before update - User: {user.first_name} {user.last_name}, Email: {user.email}")
+            
+            if first_name is not None:
+                user.first_name = first_name
+            if last_name is not None:
+                user.last_name = last_name
+            if email is not None:
+                user.email = email
+            user.save()
+            
+            print(f"After update - User: {user.first_name} {user.last_name}, Email: {user.email}")
+        else:
+            print("No user data to update")
+        
+        # Update staff fields
+        print(f"Remaining staff data to update: {validated_data}")
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        
+        return instance
