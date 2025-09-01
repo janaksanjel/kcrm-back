@@ -122,27 +122,98 @@ def manage_permissions(request, user_id):
         if request.method == 'GET':
             permissions = ShopOwnerPermissions.objects.filter(user=user)
             data = {}
+            active_modes = []
+            
             for perm in permissions:
                 data[perm.mode] = perm.permissions
-            return Response({'success': True, 'data': data})
+                if perm.is_active:
+                    active_modes.append(perm.mode)
+            
+            # If no permissions exist, return empty structure with all false
+            if not data:
+                default_structure = {
+                    'dashboard': False,
+                    'inventory': {},
+                    'billing': {},
+                    'reports': {},
+                    'staff': {},
+                    'settings': {}
+                }
+                for mode_choice in ShopOwnerPermissions.MODE_CHOICES:
+                    mode = mode_choice[0]
+                    data[mode] = default_structure
+            
+            return Response({
+                'success': True, 
+                'data': data,
+                'active_modes': active_modes,
+                'available_modes': [choice[0] for choice in ShopOwnerPermissions.MODE_CHOICES]
+            })
         
         elif request.method == 'POST':
             modes = request.data.get('modes', [])
             permissions_data = request.data.get('permissions', {})
             
-            # Clear existing permissions
-            ShopOwnerPermissions.objects.filter(user=user).delete()
-            
-            # Create new permissions
-            for mode in modes:
-                if mode in permissions_data:
-                    ShopOwnerPermissions.objects.create(
-                        user=user,
-                        mode=mode,
-                        permissions=permissions_data[mode]
-                    )
+            # Update existing permissions or create new ones
+            for mode in ShopOwnerPermissions.MODE_CHOICES:
+                mode_name = mode[0]
+                perm_obj, created = ShopOwnerPermissions.objects.get_or_create(
+                    user=user,
+                    mode=mode_name,
+                    defaults={'permissions': {}}
+                )
+                
+                # Update permissions if provided
+                if mode_name in permissions_data:
+                    perm_obj.permissions = permissions_data[mode_name]
+                
+                # Set active status based on selected modes
+                perm_obj.is_active = mode_name in modes
+                perm_obj.save()
             
             return Response({'success': True, 'message': 'Permissions updated successfully'})
             
     except User.DoesNotExist:
         return Response({'success': False, 'message': 'User not found'}, status=404)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def save_permissions(request, user_id):
+    """Save permissions for a user"""
+    if request.user.role != 'super_admin':
+        return Response({'success': False, 'message': 'Unauthorized'}, status=403)
+    
+    try:
+        user = User.objects.get(id=user_id, role='shop_owner')
+        modes = request.data.get('modes', [])
+        permissions_data = request.data.get('permissions', {})
+        
+        # Update permissions for each mode
+        for mode in ShopOwnerPermissions.MODE_CHOICES:
+            mode_name = mode[0]
+            perm_obj, created = ShopOwnerPermissions.objects.get_or_create(
+                user=user,
+                mode=mode_name,
+                defaults={'permissions': {}}
+            )
+            
+            if mode_name in permissions_data:
+                perm_obj.permissions = permissions_data[mode_name]
+            
+            perm_obj.is_active = mode_name in modes
+            perm_obj.save()
+        
+        return Response({'success': True, 'message': 'Permissions saved successfully'})
+        
+    except User.DoesNotExist:
+        return Response({'success': False, 'message': 'User not found'}, status=404)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_available_modes(request):
+    """Get all available modes"""
+    if request.user.role != 'super_admin':
+        return Response({'success': False, 'message': 'Unauthorized'}, status=403)
+    
+    modes = [{'value': choice[0], 'label': choice[1]} for choice in ShopOwnerPermissions.MODE_CHOICES]
+    return Response({'success': True, 'data': modes})
