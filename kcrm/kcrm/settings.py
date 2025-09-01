@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     'billing',
     'reports',
     'staff',
+    'superadmin'
 
 ]
 

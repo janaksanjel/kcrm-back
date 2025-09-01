@@ -10,8 +10,8 @@ urlpatterns = [
     path('api/billing/', include('billing.urls')),
     path('api/reports/', include('reports.urls')),
     path('api/staff/', include('staff.urls')),
+    path('api/superadmin/', include('superadmin.urls')),
 ]
 
-# Serve media files in development
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
