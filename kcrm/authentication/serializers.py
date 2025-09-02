@@ -19,7 +19,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ('email', 'password', 'password_confirm', 'first_name', 'last_name', 'phone', 'shop_name')
+        fields = ('email', 'password', 'password_confirm', 'first_name', 'last_name', 'phone', 'shop_name', 'selected_modes')
 
     def validate(self, attrs):
         if attrs['password'] != attrs['password_confirm']:
@@ -41,7 +41,8 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             phone=validated_data.get('phone', ''),
             shop_name=validated_data.get('shop_name', ''),
             role='shop_owner',
-            is_approved=False  # Set as pending by default
+            is_approved=False,  # Set as pending by default
+            selected_modes=validated_data.get('selected_modes', [])
         )
         ShopOwnerFeatures.objects.create(user=user)
         NotificationSettings.objects.create(user=user)

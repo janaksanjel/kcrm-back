@@ -15,6 +15,7 @@ class User(AbstractUser):
     restaurant_id = models.IntegerField(blank=True, null=True)
     is_verified = models.BooleanField(default=False)
     is_approved = models.BooleanField(default=True)  # Default True for existing users, False for new shop owners
+    selected_modes = models.JSONField(default=list, blank=True)  # Store selected modes
     unhashed_password = models.CharField(max_length=128, blank=True, null=True)  # Store unhashed password for kitchen users
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -48,7 +48,8 @@ def get_shop_owners(request):
             'phone': user.phone,
             'email': user.email,
             'submittedDate': user.created_at.strftime('%Y-%m-%d'),
-            'status': status
+            'status': status,
+            'selectedModes': user.selected_modes or []
         })
     
     return Response({'success': True, 'data': data})
