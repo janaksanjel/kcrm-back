@@ -13,6 +13,7 @@ class Role(models.Model):
     emoji = models.CharField(max_length=10, default='👤')
     color = models.CharField(max_length=100, default='from-blue-500 to-indigo-600')
     mode = models.CharField(max_length=20, choices=MODE_CHOICES)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True, related_name='created_roles')
     created_date = models.DateTimeField(auto_now_add=True)
     updated_date = models.DateTimeField(auto_now=True)
     

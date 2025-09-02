@@ -1,6 +1,7 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from django.db import models
 from .models import Role, Staff
 from .serializers import RoleSerializer, StaffSerializer
 
@@ -17,23 +18,46 @@ class RoleViewSet(viewsets.ModelViewSet):
     serializer_class = RoleSerializer
 
     def get_queryset(self):
-        queryset = Role.objects.all().order_by('-created_date')
+        owner_user = get_owner_user(self.request)
+        # Filter roles created by this owner or used by their staff
+        queryset = Role.objects.filter(
+            models.Q(created_by=owner_user) | 
+            models.Q(staff__shop_owner=owner_user)
+        ).distinct().order_by('-created_date')
+        
         mode = self.request.query_params.get('mode')
         if mode:
             queryset = queryset.filter(mode=mode)
         return queryset
+    
+    def perform_create(self, serializer):
+        owner_user = get_owner_user(self.request)
+        serializer.save(created_by=owner_user)
 
     @action(detail=False, methods=['get'])
     def stats(self, request):
+        owner_user = get_owner_user(request)
         mode = request.query_params.get('mode')
+        
         if mode:
-            total_roles = Role.objects.filter(mode=mode).count()
-            total_staff = Staff.objects.filter(role__mode=mode).count()
-            active_staff = Staff.objects.filter(role__mode=mode, is_active=True).count()
+            total_roles = Role.objects.filter(
+                models.Q(created_by=owner_user) | models.Q(staff__shop_owner=owner_user),
+                mode=mode
+            ).distinct().count()
+            total_staff = Staff.objects.filter(
+                shop_owner=owner_user, role__mode=mode
+            ).count()
+            active_staff = Staff.objects.filter(
+                shop_owner=owner_user, role__mode=mode, is_active=True
+            ).count()
         else:
-            total_roles = Role.objects.count()
-            total_staff = Staff.objects.count()
-            active_staff = Staff.objects.filter(is_active=True).count()
+            total_roles = Role.objects.filter(
+                models.Q(created_by=owner_user) | models.Q(staff__shop_owner=owner_user)
+            ).distinct().count()
+            total_staff = Staff.objects.filter(shop_owner=owner_user).count()
+            active_staff = Staff.objects.filter(
+                shop_owner=owner_user, is_active=True
+            ).count()
         
         return Response({
             'total_roles': total_roles,
@@ -66,7 +90,7 @@ class StaffViewSet(viewsets.ModelViewSet):
         save_kwargs = {
             'shop_owner': owner_user,
             'mode': mode,
-            'restaurant_id': getattr(owner_user, 'restaurant_id', None),
+            'restaurant_id': owner_user.id,
             'restaurant_name': getattr(owner_user, 'shop_name', '')
         }
         
