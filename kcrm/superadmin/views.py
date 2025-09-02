@@ -20,11 +20,12 @@ def get_shop_owners(request):
     if status_filter == 'all':
         users = User.objects.filter(role='shop_owner')
     elif status_filter == 'pending':
-        users = User.objects.filter(role='shop_owner', is_approved=False)
+        # Pending: not approved AND not rejected
+        rejected_user_ids = ShopOwnerRequest.objects.filter(status='rejected').values_list('user_id', flat=True)
+        users = User.objects.filter(role='shop_owner', is_approved=False).exclude(id__in=rejected_user_ids)
     elif status_filter == 'approved':
         users = User.objects.filter(role='shop_owner', is_approved=True)
     elif status_filter == 'rejected':
-        # For now, we'll use shop_request status for rejected users
         users = User.objects.filter(role='shop_owner', shop_request__status='rejected')
     else:
         users = User.objects.filter(role='shop_owner')
