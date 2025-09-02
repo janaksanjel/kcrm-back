@@ -34,10 +34,19 @@ def register(request):
     serializer = UserRegistrationSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.save()
+        
+        # For shop owners, don't create session or return tokens - they need approval
+        if user.role == 'shop_owner':
+            return Response({
+                'success': True,
+                'message': 'Registration successful. Your account is pending approval.',
+            }, status=status.HTTP_201_CREATED)
+        
+        # For other user types (super_admin, etc.), proceed with normal login
         refresh = RefreshToken.for_user(user)
         user_data = UserSerializer(user).data
         
-        # Create session record for new user
+        # Create session record for approved users
         user_agent = request.META.get('HTTP_USER_AGENT', 'Unknown')
         ip_address = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR', '127.0.0.1'))
         if ',' in ip_address:

@@ -19,12 +19,27 @@ def get_shop_owners(request):
     
     if status_filter == 'all':
         users = User.objects.filter(role='shop_owner')
+    elif status_filter == 'pending':
+        users = User.objects.filter(role='shop_owner', is_approved=False)
+    elif status_filter == 'approved':
+        users = User.objects.filter(role='shop_owner', is_approved=True)
+    elif status_filter == 'rejected':
+        # For now, we'll use shop_request status for rejected users
+        users = User.objects.filter(role='shop_owner', shop_request__status='rejected')
     else:
-        users = User.objects.filter(role='shop_owner', shop_request__status=status_filter)
+        users = User.objects.filter(role='shop_owner')
     
     data = []
     for user in users:
         request_obj = getattr(user, 'shop_request', None)
+        # Determine status based on is_approved field and shop_request
+        if request_obj and request_obj.status == 'rejected':
+            status = 'rejected'
+        elif user.is_approved:
+            status = 'approved'
+        else:
+            status = 'pending'
+            
         data.append({
             'id': user.id,
             'shopName': user.shop_name,
@@ -32,7 +47,7 @@ def get_shop_owners(request):
             'phone': user.phone,
             'email': user.email,
             'submittedDate': user.created_at.strftime('%Y-%m-%d'),
-            'status': request_obj.status if request_obj else 'pending'
+            'status': status
         })
     
     return Response({'success': True, 'data': data})
@@ -53,6 +68,7 @@ def approve_shop_owner(request, user_id):
         shop_request.save()
         
         user.is_verified = True
+        user.is_approved = True  # Set user as approved
         user.save()
         
         return Response({'success': True, 'message': 'Shop owner approved successfully'})
@@ -72,6 +88,9 @@ def reject_shop_owner(request, user_id):
         shop_request.status = 'rejected'
         shop_request.rejected_at = timezone.now()
         shop_request.save()
+        
+        user.is_approved = False  # Ensure rejected users cannot login
+        user.save()
         
         return Response({'success': True, 'message': 'Shop owner rejected successfully'})
     except User.DoesNotExist:

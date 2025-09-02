@@ -40,7 +40,8 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             last_name=validated_data['last_name'],
             phone=validated_data.get('phone', ''),
             shop_name=validated_data.get('shop_name', ''),
-            role='shop_owner'
+            role='shop_owner',
+            is_approved=False  # Set as pending by default
         )
         ShopOwnerFeatures.objects.create(user=user)
         NotificationSettings.objects.create(user=user)
@@ -132,6 +133,20 @@ class UserLoginSerializer(serializers.Serializer):
                 raise serializers.ValidationError({"non_field_errors": "Invalid email/username or password"})
             if not user.is_active:
                 raise serializers.ValidationError({"non_field_errors": "Account is disabled"})
+            if user.role == 'shop_owner':
+                # Check if user has a rejected status
+                try:
+                    from superadmin.models import ShopOwnerRequest
+                    shop_request = ShopOwnerRequest.objects.get(user=user)
+                    if shop_request.status == 'rejected':
+                        raise serializers.ValidationError({"non_field_errors": "Your account has been rejected. Please contact support."})
+                except ShopOwnerRequest.DoesNotExist:
+                    pass
+                
+                # Check if user is not approved (pending)
+                if not getattr(user, 'is_approved', True):
+                    raise serializers.ValidationError({"non_field_errors": "Your account is pending approval. Please wait for admin approval."})
+            
             attrs['user'] = user
         return attrs
 
