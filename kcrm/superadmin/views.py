@@ -6,6 +6,8 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import make_password
 from django.utils import timezone
 from .models import ShopOwnerRequest, ShopOwnerPermissions
+from .serializers import UserPermissionSerializer
+from staff.models import Staff, Permission
 
 User = get_user_model()
 
@@ -238,3 +240,15 @@ def get_available_modes(request):
     
     modes = [{'value': choice[0], 'label': choice[1]} for choice in ShopOwnerPermissions.MODE_CHOICES]
     return Response({'success': True, 'data': modes})
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_user_permissions(request):
+    """Get unified permissions for logged in user"""
+    user = request.user
+    serializer = UserPermissionSerializer(user)
+    
+    return Response({
+        'success': True,
+        'data': serializer.data
+    })
