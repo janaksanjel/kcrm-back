@@ -9,3 +9,4 @@ cryptography==41.0.7
 sqlparse==0.5.3
 tzdata==2025.2
 setuptools==75.6.0
+gunicorn==21.2.0
