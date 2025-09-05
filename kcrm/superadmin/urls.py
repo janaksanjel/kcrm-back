@@ -12,4 +12,5 @@ urlpatterns = [
     path('available-modes/', views.get_available_modes, name='get_available_modes'),
     path('user-permissions/', views.get_user_permissions, name='get_user_permissions'),
     path('dashboard-stats/', views.get_dashboard_stats, name='get_dashboard_stats'),
+    path('all-shops/', views.get_all_shops, name='get_all_shops'),
 ]

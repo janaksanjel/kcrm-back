@@ -317,6 +317,53 @@ def get_dashboard_stats(request):
         }
     })
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_all_shops(request):
+    """Get all shops with detailed information for shop management"""
+    if request.user.role != 'super_admin':
+        return Response({'success': False, 'message': 'Unauthorized'}, status=403)
+    
+    users = User.objects.filter(role='shop_owner').order_by('-created_at')
+    
+    data = []
+    for user in users:
+        request_obj = getattr(user, 'shop_request', None)
+        
+        # Determine status
+        if request_obj and request_obj.status == 'rejected':
+            status = 'rejected'
+        elif user.is_approved:
+            status = 'approved'
+        else:
+            status = 'pending'
+        
+        # Get business type from selected modes or default
+        business_type = 'General'
+        if user.selected_modes:
+            if 'kirana' in user.selected_modes:
+                business_type = 'Kirana'
+            elif 'restaurant' in user.selected_modes:
+                business_type = 'Restaurant'
+            elif 'dealership' in user.selected_modes:
+                business_type = 'Dealership'
+        
+        data.append({
+            'id': user.id,
+            'shopName': user.shop_name or f"{user.first_name}'s Shop",
+            'ownerName': f"{user.first_name} {user.last_name}",
+            'email': user.email,
+            'phone': user.phone or 'N/A',
+            'address': getattr(user, 'address', 'N/A'),
+            'businessType': business_type,
+            'status': status,
+            'createdAt': user.created_at.isoformat(),
+            'lastActive': user.last_login.isoformat() if user.last_login else user.created_at.isoformat(),
+            'selectedModes': user.selected_modes or []
+        })
+    
+    return Response({'success': True, 'data': data})
+
 def get_time_ago(datetime_obj):
     """Helper function to get human readable time ago"""
     now = timezone.now()
