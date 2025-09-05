@@ -252,3 +252,83 @@ def get_user_permissions(request):
         'success': True,
         'data': serializer.data
     })
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_dashboard_stats(request):
+    """Get dashboard statistics"""
+    if request.user.role != 'super_admin':
+        return Response({'success': False, 'message': 'Unauthorized'}, status=403)
+    
+    from django.db.models import Count, Q
+    from datetime import datetime, timedelta
+    
+    # Get shop statistics
+    total_shops = User.objects.filter(role='shop_owner').count()
+    pending_requests = User.objects.filter(
+        role='shop_owner', 
+        is_approved=False
+    ).exclude(
+        shop_request__status='rejected'
+    ).count()
+    approved_shops = User.objects.filter(role='shop_owner', is_approved=True).count()
+    rejected_requests = ShopOwnerRequest.objects.filter(status='rejected').count()
+    
+    # Recent shop requests (last 10)
+    recent_requests = User.objects.filter(
+        role='shop_owner'
+    ).order_by('-created_at')[:10]
+    
+    recent_requests_data = []
+    for user in recent_requests:
+        request_obj = getattr(user, 'shop_request', None)
+        if request_obj and request_obj.status == 'rejected':
+            status = 'rejected'
+        elif user.is_approved:
+            status = 'approved'
+        else:
+            status = 'pending'
+            
+        recent_requests_data.append({
+            'id': user.id,
+            'shopName': user.shop_name,
+            'ownerName': f"{user.first_name} {user.last_name}",
+            'submittedDate': user.created_at,
+            'status': status,
+            'timeAgo': get_time_ago(user.created_at)
+        })
+    
+    # Mode distribution
+    mode_stats = {}
+    for mode_choice in ShopOwnerPermissions.MODE_CHOICES:
+        mode = mode_choice[0]
+        count = ShopOwnerPermissions.objects.filter(mode=mode, is_active=True).count()
+        mode_stats[mode] = count
+    
+    return Response({
+        'success': True,
+        'data': {
+            'totalShops': total_shops,
+            'pendingRequests': pending_requests,
+            'approvedShops': approved_shops,
+            'rejectedRequests': rejected_requests,
+            'recentRequests': recent_requests_data,
+            'modeDistribution': mode_stats
+        }
+    })
+
+def get_time_ago(datetime_obj):
+    """Helper function to get human readable time ago"""
+    now = timezone.now()
+    diff = now - datetime_obj
+    
+    if diff.days > 0:
+        return f"{diff.days} day{'s' if diff.days > 1 else ''} ago"
+    elif diff.seconds > 3600:
+        hours = diff.seconds // 3600
+        return f"{hours} hour{'s' if hours > 1 else ''} ago"
+    elif diff.seconds > 60:
+        minutes = diff.seconds // 60
+        return f"{minutes} minute{'s' if minutes > 1 else ''} ago"
+    else:
+        return "Just now"
