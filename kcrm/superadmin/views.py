@@ -364,6 +364,90 @@ def get_all_shops(request):
     
     return Response({'success': True, 'data': data})
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_shop_details(request, user_id):
+    """Get detailed shop information including permissions, staff, sales, etc."""
+    if request.user.role != 'super_admin':
+        return Response({'success': False, 'message': 'Unauthorized'}, status=403)
+    
+    try:
+        user = User.objects.get(id=user_id, role='shop_owner')
+        request_obj = getattr(user, 'shop_request', None)
+        
+        # Basic shop info
+        if request_obj and request_obj.status == 'rejected':
+            status = 'rejected'
+        elif user.is_approved:
+            status = 'approved'
+        else:
+            status = 'pending'
+        
+        # Get permissions
+        permissions = ShopOwnerPermissions.objects.filter(user=user)
+        permissions_data = {}
+        active_modes = []
+        
+        for perm in permissions:
+            permissions_data[perm.mode] = perm.permissions
+            if perm.is_active:
+                active_modes.append(perm.mode)
+        
+        # Get staff count
+        staff_count = Staff.objects.filter(shop_owner=user).count()
+        
+        # Mock sales and customer data (replace with actual models when available)
+        sales_data = {
+            'total_sales': 0,
+            'monthly_sales': 0,
+            'weekly_sales': 0,
+            'today_sales': 0
+        }
+        
+        customer_data = {
+            'total_customers': 0,
+            'active_customers': 0,
+            'new_customers_this_month': 0
+        }
+        
+        # Get additional admin data
+        login_count = getattr(user, 'login_count', 0)
+        is_verified = user.is_verified
+        account_type = 'Premium' if len(active_modes) > 1 else 'Basic'
+        
+        data = {
+            'id': user.id,
+            'shopName': user.shop_name or f"{user.first_name}'s Shop",
+            'ownerName': f"{user.first_name} {user.last_name}",
+            'email': user.email,
+            'phone': user.phone or 'N/A',
+            'status': status,
+            'createdAt': user.created_at.isoformat(),
+            'lastActive': user.last_login.isoformat() if user.last_login else user.created_at.isoformat(),
+            'selectedModes': user.selected_modes or [],
+            'activeModes': active_modes,
+            'permissions': permissions_data,
+            'staffCount': staff_count,
+            'salesData': sales_data,
+            'customerData': customer_data,
+            'businessType': 'Kirana' if 'kirana' in (user.selected_modes or []) else 
+                           'Restaurant' if 'restaurant' in (user.selected_modes or []) else
+                           'Dealership' if 'dealership' in (user.selected_modes or []) else 'General',
+            'adminData': {
+                'loginCount': login_count,
+                'isVerified': is_verified,
+                'accountType': account_type,
+                'totalPermissions': sum(len(perms) for perms in permissions_data.values()),
+                'daysActive': (timezone.now() - user.created_at).days,
+                'lastLoginDays': (timezone.now() - user.last_login).days if user.last_login else None
+            }
+        }
+        
+        return Response({'success': True, 'data': data})
+        
+    except User.DoesNotExist:
+        return Response({'success': False, 'message': 'Shop not found'}, status=404)
+
 def get_time_ago(datetime_obj):
     """Helper function to get human readable time ago"""
     now = timezone.now()
