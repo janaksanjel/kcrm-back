@@ -2,6 +2,7 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from django.core.paginator import Paginator
 from authentication.models import EconomicYear
 from .models import Category, Supplier, Purchase, Stock
 from .serializers import CategorySerializer, SupplierSerializer, StockSerializer
@@ -31,14 +32,37 @@ def categories(request):
     
     if request.method == 'GET':
         mode = request.GET.get('mode', 'kirana')
+        page = int(request.GET.get('page', 1))
+        page_size = int(request.GET.get('page_size', 10))
+        
         try:
             categories = Category.objects.filter(user=owner_user, economic_year=active_year, mode=mode)
         except Exception as e:
             categories = Category.objects.filter(user=owner_user, economic_year=active_year)
-        serializer = CategorySerializer(categories, many=True)
+        
+        paginator = Paginator(categories, page_size)
+        page_obj = paginator.get_page(page)
+        serializer = CategorySerializer(page_obj, many=True)
+        
+        # Calculate stats from all categories
+        total_purchases = sum(cat.purchases.count() for cat in categories)
+        active_categories = categories.filter(is_active=True).count()
+        
         return Response({
             'success': True,
-            'categories': serializer.data
+            'categories': serializer.data,
+            'pagination': {
+                'current_page': page_obj.number,
+                'total_pages': paginator.num_pages,
+                'total_items': paginator.count,
+                'has_next': page_obj.has_next(),
+                'has_previous': page_obj.has_previous()
+            },
+            'stats': {
+                'total_purchases': total_purchases,
+                'active_categories': active_categories,
+                'total_categories': paginator.count
+            }
         })
     
     elif request.method == 'POST':
@@ -103,14 +127,28 @@ def suppliers(request):
     
     if request.method == 'GET':
         mode = request.GET.get('mode', 'kirana')
+        page = int(request.GET.get('page', 1))
+        page_size = int(request.GET.get('page_size', 10))
+        
         try:
             suppliers = Supplier.objects.filter(user=owner_user, economic_year=active_year, mode=mode)
         except Exception as e:
             suppliers = Supplier.objects.filter(user=owner_user, economic_year=active_year)
-        serializer = SupplierSerializer(suppliers, many=True)
+        
+        paginator = Paginator(suppliers, page_size)
+        page_obj = paginator.get_page(page)
+        serializer = SupplierSerializer(page_obj, many=True)
+        
         return Response({
             'success': True,
-            'suppliers': serializer.data
+            'suppliers': serializer.data,
+            'pagination': {
+                'current_page': page_obj.number,
+                'total_pages': paginator.num_pages,
+                'total_items': paginator.count,
+                'has_next': page_obj.has_next(),
+                'has_previous': page_obj.has_previous()
+            }
         })
     
     elif request.method == 'POST':
@@ -175,15 +213,29 @@ def purchases(request):
     
     if request.method == 'GET':
         mode = request.GET.get('mode', 'kirana')
+        page = int(request.GET.get('page', 1))
+        page_size = int(request.GET.get('page_size', 10))
+        
         try:
             purchases = Purchase.objects.filter(user=owner_user, economic_year=active_year, mode=mode)
         except Exception as e:
             purchases = Purchase.objects.filter(user=owner_user, economic_year=active_year)
+        
+        paginator = Paginator(purchases, page_size)
+        page_obj = paginator.get_page(page)
         from .serializers import PurchaseSerializer
-        serializer = PurchaseSerializer(purchases, many=True)
+        serializer = PurchaseSerializer(page_obj, many=True)
+        
         return Response({
             'success': True,
-            'purchases': serializer.data
+            'purchases': serializer.data,
+            'pagination': {
+                'current_page': page_obj.number,
+                'total_pages': paginator.num_pages,
+                'total_items': paginator.count,
+                'has_next': page_obj.has_next(),
+                'has_previous': page_obj.has_previous()
+            }
         })
     
     elif request.method == 'POST':
@@ -250,14 +302,20 @@ def stocks(request):
     
     if request.method == 'GET':
         mode = request.GET.get('mode', 'kirana')
+        page = int(request.GET.get('page', 1))
+        page_size = int(request.GET.get('page_size', 10))
+        
         try:
             stocks = Stock.objects.filter(user=owner_user, economic_year=active_year, mode=mode)
         except Exception as e:
             stocks = Stock.objects.filter(user=owner_user, economic_year=active_year)
         
+        paginator = Paginator(stocks, page_size)
+        page_obj = paginator.get_page(page)
+        
         # Enhance stock data with purchase information
         enhanced_stocks = []
-        for stock in stocks:
+        for stock in page_obj:
             stock_data = StockSerializer(stock).data
             
             # Get related purchase data for category, supplier, and prices
@@ -291,7 +349,14 @@ def stocks(request):
         
         return Response({
             'success': True,
-            'stocks': enhanced_stocks
+            'stocks': enhanced_stocks,
+            'pagination': {
+                'current_page': page_obj.number,
+                'total_pages': paginator.num_pages,
+                'total_items': paginator.count,
+                'has_next': page_obj.has_next(),
+                'has_previous': page_obj.has_previous()
+            }
         })
     
     elif request.method == 'POST':
