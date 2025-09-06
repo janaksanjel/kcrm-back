@@ -125,8 +125,12 @@ class UserLoginSerializer(serializers.Serializer):
             
             if not user and '@' in email_or_username:
                 try:
-                    user_obj = User.objects.get(email=email_or_username)
-                    user = authenticate(username=user_obj.username, password=password)
+                    # Handle multiple users with same email by trying each one
+                    user_objs = User.objects.filter(email=email_or_username)
+                    for user_obj in user_objs:
+                        user = authenticate(username=user_obj.username, password=password)
+                        if user:
+                            break
                 except User.DoesNotExist:
                     pass
             
