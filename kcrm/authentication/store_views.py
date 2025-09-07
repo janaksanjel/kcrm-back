@@ -23,24 +23,18 @@ def store_config(request):
         return Response({
             'success': True,
             'data': {
-                'store_url': config.store_url or '',
+                'currency_symbol': config.currency_symbol or '',
                 'store_shortcode': config.store_shortcode or '',
                 'owner_id': config.user.id
             }
         })
     
     elif request.method == 'PUT':
-        store_url = request.data.get('store_url', '').strip()
+        currency_symbol = request.data.get('currency_symbol', '').strip()
         store_shortcode = request.data.get('store_shortcode', '').strip()
         
-        if not store_url or not store_shortcode:
-            return Response({
-                'success': False,
-                'message': 'Store URL and shortcode are required'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
         try:
-            config.store_url = store_url
+            config.currency_symbol = currency_symbol
             config.store_shortcode = store_shortcode
             config.save()
             
@@ -48,11 +42,6 @@ def store_config(request):
                 'success': True,
                 'message': 'Store configuration updated successfully'
             })
-        except ValueError as e:
-            return Response({
-                'success': False,
-                'message': str(e)
-            }, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({
                 'success': False,
@@ -60,12 +49,12 @@ def store_config(request):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     elif request.method == 'PATCH':
-        store_url = request.data.get('store_url')
+        currency_symbol = request.data.get('currency_symbol')
         store_shortcode = request.data.get('store_shortcode')
         
         try:
-            if store_url is not None:
-                config.store_url = store_url.strip()
+            if currency_symbol is not None:
+                config.currency_symbol = currency_symbol.strip()
             if store_shortcode is not None:
                 config.store_shortcode = store_shortcode.strip()
             config.save()
@@ -98,7 +87,7 @@ def store_config(request):
 def check_availability(request):
     owner_user = get_owner_user(request)
     value = request.data.get('value', '').strip()
-    field_type = request.data.get('type', 'username')  # 'username' or 'url'
+    field_type = request.data.get('type', 'username')
     
     if not value:
         return Response({
@@ -107,20 +96,21 @@ def check_availability(request):
             'message': f'{field_type.title()} is required'
         })
     
-    # Check availability based on field type
-    if field_type == 'url':
-        exists = StoreConfig.objects.filter(
-            store_url=value
-        ).exclude(user=owner_user).exists()
-        message = 'URL available' if not exists else 'URL already taken'
-    else:
+    # Only check shortcode availability
+    if field_type == 'username':
         exists = StoreConfig.objects.filter(
             store_shortcode=value
         ).exclude(user=owner_user).exists()
         message = 'Shortcode available' if not exists else 'Shortcode already taken'
+        return Response({
+            'success': True,
+            'available': not exists,
+            'message': message
+        })
     
+    # For other types, always return available
     return Response({
         'success': True,
-        'available': not exists,
-        'message': message
+        'available': True,
+        'message': 'Available'
     })

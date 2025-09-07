@@ -97,26 +97,18 @@ class SecurityActivity(models.Model):
 
 class StoreConfig(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='store_config')
-    store_url = models.CharField(max_length=255, blank=True, null=True)
-    store_shortcode = models.CharField(max_length=50, blank=True, null=True)
+    currency_symbol = models.CharField(max_length=10, blank=True, null=True)
+    store_shortcode = models.CharField(max_length=50, blank=True, null=True, unique=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
     def save(self, *args, **kwargs):
-        # Convert empty strings to None to avoid unique constraint issues
-        if not self.store_url or not self.store_url.strip():
-            self.store_url = None
+        # Convert empty strings to None
+        if not self.currency_symbol or not self.currency_symbol.strip():
+            self.currency_symbol = None
         if not self.store_shortcode or not self.store_shortcode.strip():
             self.store_shortcode = None
-        
-        # Check uniqueness for non-null URLs
-        if self.store_url:
-            existing = StoreConfig.objects.filter(
-                store_url=self.store_url
-            ).exclude(user=self.user).first()
-            if existing:
-                raise ValueError('This URL is already taken')
         
         # Check uniqueness for non-null shortcodes
         if self.store_shortcode:
