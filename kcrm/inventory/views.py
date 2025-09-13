@@ -35,10 +35,7 @@ def categories(request):
         page = int(request.GET.get('page', 1))
         page_size = int(request.GET.get('page_size', 10))
         
-        try:
-            categories = Category.objects.filter(user=owner_user, economic_year=active_year, mode=mode)
-        except Exception as e:
-            categories = Category.objects.filter(user=owner_user, economic_year=active_year)
+        categories = Category.objects.filter(user=owner_user, economic_year=active_year, mode=mode)
         
         paginator = Paginator(categories, page_size)
         page_obj = paginator.get_page(page)
@@ -130,10 +127,7 @@ def suppliers(request):
         page = int(request.GET.get('page', 1))
         page_size = int(request.GET.get('page_size', 10))
         
-        try:
-            suppliers = Supplier.objects.filter(user=owner_user, economic_year=active_year, mode=mode)
-        except Exception as e:
-            suppliers = Supplier.objects.filter(user=owner_user, economic_year=active_year)
+        suppliers = Supplier.objects.filter(user=owner_user, economic_year=active_year, mode=mode)
         
         paginator = Paginator(suppliers, page_size)
         page_obj = paginator.get_page(page)
@@ -216,10 +210,7 @@ def purchases(request):
         page = int(request.GET.get('page', 1))
         page_size = int(request.GET.get('page_size', 10))
         
-        try:
-            purchases = Purchase.objects.filter(user=owner_user, economic_year=active_year, mode=mode)
-        except Exception as e:
-            purchases = Purchase.objects.filter(user=owner_user, economic_year=active_year)
+        purchases = Purchase.objects.filter(user=owner_user, economic_year=active_year, mode=mode)
         
         paginator = Paginator(purchases, page_size)
         page_obj = paginator.get_page(page)
@@ -305,45 +296,37 @@ def stocks(request):
         page = int(request.GET.get('page', 1))
         page_size = int(request.GET.get('page_size', 10))
         
-        try:
-            stocks = Stock.objects.filter(user=owner_user, economic_year=active_year, mode=mode)
-        except Exception as e:
-            stocks = Stock.objects.filter(user=owner_user, economic_year=active_year)
+        stocks = Stock.objects.filter(user=owner_user, economic_year=active_year, mode=mode)
         
         paginator = Paginator(stocks, page_size)
         page_obj = paginator.get_page(page)
         
-        # Enhance stock data with purchase information
+        # Enhance stock data with category and supplier information
         enhanced_stocks = []
         for stock in page_obj:
             stock_data = StockSerializer(stock).data
             
-            # Get related purchase data for category, supplier, and prices
-            try:
-                latest_purchase = Purchase.objects.filter(
-                    product_name=stock.product_name,
-                    user=owner_user,
-                    economic_year=active_year,
-                    mode=mode
-                ).order_by('-created_at').first()
-                
-                if latest_purchase:
-                    stock_data['category_name'] = latest_purchase.category.name if latest_purchase.category else 'General'
-                    stock_data['supplier_name'] = latest_purchase.supplier.name if latest_purchase.supplier else 'Unknown'
-                    # Use stock's cost_price if available, otherwise use purchase unit_price
-                    stock_data['cost_price'] = float(stock.cost_price) if stock.cost_price > 0 else float(latest_purchase.unit_price)
-                    # Use stock's selling_price if available, otherwise use purchase selling_price
-                    stock_data['selling_price'] = float(stock.selling_price) if stock.selling_price > 0 else (float(latest_purchase.selling_price) if latest_purchase.selling_price else float(latest_purchase.unit_price) * 1.2)
-                else:
-                    stock_data['category_name'] = 'General'
-                    stock_data['supplier_name'] = 'Unknown'
-                    stock_data['cost_price'] = float(stock.cost_price) if stock.cost_price > 0 else 0
-                    stock_data['selling_price'] = float(stock.selling_price) if stock.selling_price > 0 else 0
-            except Exception as e:
-                stock_data['category_name'] = 'General'
-                stock_data['supplier_name'] = 'Unknown'
-                stock_data['cost_price'] = 0
-                stock_data['selling_price'] = 0
+            # Get category and supplier names from the stock's foreign keys first
+            stock_data['category_name'] = stock.category.name if stock.category else 'General'
+            stock_data['supplier_name'] = stock.supplier.name if stock.supplier else 'Unknown'
+            
+            # If no category/supplier in stock, try to get from latest purchase
+            if not stock.category or not stock.supplier:
+                try:
+                    latest_purchase = Purchase.objects.filter(
+                        product_name=stock.product_name,
+                        user=owner_user,
+                        economic_year=active_year,
+                        mode=mode
+                    ).order_by('-created_at').first()
+                    
+                    if latest_purchase:
+                        if not stock.category and latest_purchase.category:
+                            stock_data['category_name'] = latest_purchase.category.name
+                        if not stock.supplier and latest_purchase.supplier:
+                            stock_data['supplier_name'] = latest_purchase.supplier.name
+                except Exception:
+                    pass
             
             enhanced_stocks.append(stock_data)
         
@@ -598,7 +581,12 @@ def transfer_to_stock(request, purchase_id):
             stock.current_stock += purchase.quantity
             stock.cost_price = purchase.unit_price
             stock.selling_price = purchase.selling_price or purchase.unit_price * 1.2
+            stock.category = purchase.category
+            stock.supplier = purchase.supplier
             stock.save()
+        
+        # Update stock status
+        stock.update_status()
         
         # Mark purchase as transferred
         purchase.isTransferredStock = True
@@ -634,16 +622,10 @@ def dashboard_stats(request):
     
     mode = request.GET.get('mode', 'kirana')
     
-    try:
-        total_categories = Category.objects.filter(user=owner_user, economic_year=active_year, mode=mode).count()
-        total_suppliers = Supplier.objects.filter(user=owner_user, economic_year=active_year, mode=mode).count()
-        total_purchases = Purchase.objects.filter(user=owner_user, economic_year=active_year, mode=mode).count()
-        low_stock_items = Stock.objects.filter(user=owner_user, economic_year=active_year, mode=mode, status='Low').count()
-    except Exception as e:
-        total_categories = Category.objects.filter(user=owner_user, economic_year=active_year).count()
-        total_suppliers = Supplier.objects.filter(user=owner_user, economic_year=active_year).count()
-        total_purchases = Purchase.objects.filter(user=owner_user, economic_year=active_year).count()
-        low_stock_items = Stock.objects.filter(user=owner_user, economic_year=active_year, status='Low').count()
+    total_categories = Category.objects.filter(user=owner_user, economic_year=active_year, mode=mode).count()
+    total_suppliers = Supplier.objects.filter(user=owner_user, economic_year=active_year, mode=mode).count()
+    total_purchases = Purchase.objects.filter(user=owner_user, economic_year=active_year, mode=mode).count()
+    low_stock_items = Stock.objects.filter(user=owner_user, economic_year=active_year, mode=mode, status='Low').count()
     
     return Response({
         'success': True,
@@ -653,4 +635,148 @@ def dashboard_stats(request):
             'totalPurchases': total_purchases,
             'lowStockItems': low_stock_items
         }
+    })
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def bulk_delete_stocks(request):
+    owner_user = get_owner_user(request)
+    active_year = EconomicYear.objects.filter(user=owner_user, is_active=True).first()
+    if not active_year:
+        return Response({
+            'success': False,
+            'message': 'No active economic year found'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    stock_ids = request.data.get('ids', [])
+    if not stock_ids:
+        return Response({
+            'success': False,
+            'message': 'No stock IDs provided'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        deleted_count = Stock.objects.filter(
+            id__in=stock_ids,
+            user=owner_user,
+            economic_year=active_year
+        ).delete()[0]
+        
+        return Response({
+            'success': True,
+            'message': f'{deleted_count} stocks deleted successfully',
+            'deleted_count': deleted_count
+        })
+    except Exception as e:
+        return Response({
+            'success': False,
+            'message': f'Error deleting stocks: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def bulk_create_stocks(request):
+    owner_user = get_owner_user(request)
+    active_year = EconomicYear.objects.filter(user=owner_user, is_active=True).first()
+    if not active_year:
+        return Response({
+            'success': False,
+            'message': 'No active economic year found'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    stocks_data = request.data.get('stocks', [])
+    if not stocks_data:
+        return Response({
+            'success': False,
+            'message': 'No stock data provided'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    created_stocks = []
+    errors = []
+    
+    for stock_data in stocks_data:
+        try:
+            mode = stock_data.get('mode', 'kirana')
+            
+            # Handle category - create if doesn't exist
+            category = None
+            category_name = stock_data.get('category_name', 'General')
+            if category_name and category_name.strip():
+                category, created = Category.objects.get_or_create(
+                    name=category_name.strip(),
+                    user=owner_user,
+                    economic_year=active_year,
+                    mode=mode,
+                    defaults={'description': f'Auto-created category for {category_name}'}
+                )
+            
+            # Handle supplier - create if doesn't exist
+            supplier = None
+            supplier_name = stock_data.get('supplier_name', 'Unknown')
+            if supplier_name and supplier_name.strip():
+                supplier, created = Supplier.objects.get_or_create(
+                    name=supplier_name.strip(),
+                    user=owner_user,
+                    economic_year=active_year,
+                    mode=mode,
+                    defaults={
+                        'contact': '',
+                        'address': f'Auto-created supplier for {supplier_name}',
+                        'status': 'Active'
+                    }
+                )
+            
+            # Create or update existing stock
+            existing_stock = Stock.objects.filter(
+                product_name=stock_data.get('product_name'),
+                user=owner_user,
+                economic_year=active_year,
+                mode=mode
+            ).first()
+            
+            if existing_stock:
+                # Update existing stock
+                existing_stock.current_stock += int(stock_data.get('current_stock', 0))
+                existing_stock.selling_price = float(stock_data.get('selling_price', existing_stock.selling_price))
+                existing_stock.cost_price = float(stock_data.get('cost_price', existing_stock.cost_price))
+                if category:
+                    existing_stock.category = category
+                if supplier:
+                    existing_stock.supplier = supplier
+                existing_stock.update_status()
+                created_stocks.append(StockSerializer(existing_stock).data)
+            else:
+                # Prepare data for new stock creation
+                new_stock_data = {
+                    'product_name': stock_data.get('product_name'),
+                    'current_stock': int(stock_data.get('current_stock', 0)),
+                    'selling_price': float(stock_data.get('selling_price', 0)),
+                    'cost_price': float(stock_data.get('cost_price', 0)),
+                    'unit': stock_data.get('unit', 'kg'),
+                    'barcode': stock_data.get('barcode', ''),
+                    'mode': mode
+                }
+                
+                # Add foreign key IDs if objects exist
+                if category:
+                    new_stock_data['category'] = category.id
+                if supplier:
+                    new_stock_data['supplier'] = supplier.id
+                
+                serializer = StockSerializer(data=new_stock_data, context={'request': request, 'owner_user': owner_user})
+                if serializer.is_valid():
+                    stock = serializer.save()
+                    created_stocks.append(serializer.data)
+                else:
+                    errors.append(f'Invalid data for {stock_data.get("product_name", "unknown")}: {serializer.errors}')
+        except Exception as e:
+            errors.append(f'Error processing stock {stock_data.get("product_name", "unknown")}: {str(e)}')
+    
+    return Response({
+        'success': len(created_stocks) > 0,
+        'message': f'{len(created_stocks)} stocks processed successfully',
+        'created_count': len(created_stocks),
+        'error_count': len(errors),
+        'data': {'successCount': len(created_stocks), 'errorCount': len(errors)},
+        'errors': errors
     })
